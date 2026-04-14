@@ -41,7 +41,7 @@ app.use(express.raw({ type: "application/octet-stream", limit: "20mb" }));
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, x-api-key, anthropic-version");
+  res.header("Access-Control-Allow-Headers", "Content-Type, x-api-key, anthropic-version, Authorization");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
@@ -57,6 +57,49 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// ── Auth helpers (définis tôt pour être disponibles partout) ────────────────
+function hashPassword(pw) {
+  return require("crypto").createHash("sha256").update(pw).digest("hex");
+}
+function generateToken() {
+  return require("crypto").randomBytes(32).toString("hex");
+}
+
+/** Middleware optionnel — attache req.currentUser si token valide */
+function authMiddleware(req, res, next) {
+  const header = req.headers["authorization"] || "";
+  const token  = header.replace(/^Bearer\s+/, "");
+  if (!token) return next();
+  const now = new Date().toISOString();
+  db.get(
+    `SELECT u.* FROM users u
+     JOIN auth_sessions s ON s.user_id = u.id
+     WHERE s.token = ? AND s.expires_at > ?`,
+    [token, now],
+    (err, user) => {
+      if (!err && user) req.currentUser = user;
+      next();
+    }
+  );
+}
+
+/** Exige une session valide */
+function requireAuth(req, res, next) {
+  if (!req.currentUser) return res.status(401).json({ error: "Non authentifié" });
+  next();
+}
+
+/** Exige rôle cp ou admin */
+function requireCP(req, res, next) {
+  if (!req.currentUser) return res.status(401).json({ error: "Non authentifié" });
+  if (!["cp", "admin"].includes(req.currentUser.role))
+    return res.status(403).json({ error: "Rôle CP ou admin requis" });
+  next();
+}
+
+// Monté ici pour que req.currentUser soit disponible sur TOUTES les routes
+app.use(authMiddleware);
 
 // ══════════════════════════════════════════════════════
 // ██  API PROJECTS
@@ -1229,69 +1272,36 @@ app.get("/api/projects/:id/comep-report", (req, res) => {
 // ██  P3 — AUTH / USERS / WORKFLOW / NOTIFICATIONS
 // ══════════════════════════════════════════════════════
 
-// ── Helpers auth ─────────────────────────────────────
-function hashPassword(pw) {
-  return crypto.createHash("sha256").update(pw).digest("hex");
-}
-
-function generateToken() {
-  return crypto.randomBytes(32).toString("hex");
-}
-
-/** Middleware optionnel — attache req.currentUser si token valide */
-function authMiddleware(req, res, next) {
-  const header = req.headers["authorization"] || "";
-  const token  = header.replace(/^Bearer\s+/, "");
-  if (!token) return next(); // non-authentifié mais on continue (certains endpoints publics)
-  const now = new Date().toISOString();
-  db.get(
-    `SELECT u.* FROM users u
-     JOIN auth_sessions s ON s.user_id = u.id
-     WHERE s.token = ? AND s.expires_at > ?`,
-    [token, now],
-    (err, user) => {
-      if (!err && user) req.currentUser = user;
-      next();
-    }
-  );
-}
-
-/** Middleware qui exige auth */
-function requireAuth(req, res, next) {
-  if (!req.currentUser) return res.status(401).json({ error: "Non authentifié" });
-  next();
-}
-
-/** Middleware qui exige rôle cp ou admin */
-function requireCP(req, res, next) {
-  if (!req.currentUser) return res.status(401).json({ error: "Non authentifié" });
-  if (!["cp", "admin"].includes(req.currentUser.role))
-    return res.status(403).json({ error: "Rôle CP ou admin requis" });
-  next();
-}
-
-app.use(authMiddleware);
-
 // ── POST /api/auth/register ───────────────────────────
+// Premier lancement : si aucun user en BDD, création libre (bootstrap admin)
+// Ensuite : accessible uniquement aux admins connectés
 app.post("/api/auth/register", (req, res) => {
   const { username, password, display_name, role, email } = req.body;
   if (!username || !password || !display_name) {
     return res.status(400).json({ error: "username, password et display_name requis" });
   }
-  const allowedRoles = ["automaticien", "cp", "key_user", "admin"];
-  const userRole = allowedRoles.includes(role) ? role : "automaticien";
-  const hash = hashPassword(password);
-  db.run(
-    "INSERT INTO users (username, password_hash, display_name, role, email) VALUES (?, ?, ?, ?, ?)",
-    [username, hash, display_name, userRole, email || null],
-    function(err) {
-      if (err) {
-        if (err.message.includes("UNIQUE")) return res.status(409).json({ error: "Nom d'utilisateur déjà pris" });
-        return res.status(500).json({ error: err.message });
-      }
-      res.status(201).json({ id: this.lastID, username, display_name, role: userRole, email: email || null });
+  db.get("SELECT COUNT(*) AS cnt FROM users", [], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const isFirstUser = (row.cnt === 0);
+    // Si déjà des utilisateurs en BDD → exiger admin
+    if (!isFirstUser && (!req.currentUser || req.currentUser.role !== "admin")) {
+      return res.status(403).json({ error: "Seul un administrateur peut créer des comptes" });
     }
-  );
+    const allowedRoles = ["automaticien", "cp", "key_user", "admin"];
+    const userRole = allowedRoles.includes(role) ? role : "automaticien";
+    const hash = hashPassword(password);
+    db.run(
+      "INSERT INTO users (username, password_hash, display_name, role, email) VALUES (?, ?, ?, ?, ?)",
+      [username, hash, display_name, userRole, email || null],
+      function(insertErr) {
+        if (insertErr) {
+          if (insertErr.message.includes("UNIQUE")) return res.status(409).json({ error: "Nom d'utilisateur déjà pris" });
+          return res.status(500).json({ error: insertErr.message });
+        }
+        res.status(201).json({ id: this.lastID, username, display_name, role: userRole, email: email || null });
+      }
+    );
+  });
 });
 
 // ── POST /api/auth/login ──────────────────────────────
@@ -1517,9 +1527,24 @@ app.post("/api/notifications/read-all", requireAuth, (req, res) => {
 // ██  STATIC FILES
 // ══════════════════════════════════════════════════════
 
+// Fichiers statiques React (build Vite)
+const reactDist = path.join(__dirname, "src-react", "dist");
+if (fs.existsSync(reactDist)) {
+  app.use(express.static(reactDist));
+}
+
+// Pages HTML vanilla (ancienne interface) — uniquement les .html et assets CSS/JS explicites
 app.use(express.static(__dirname, {
   extensions: ["html"],
-  index: "index.html"
+  index: false, // pas d'index auto depuis la racine
+  setHeaders: (res, filePath) => {
+    // Bloquer l'accès aux fichiers sensibles
+    const blocked = [".js", ".db", ".json", ".sql", ".env"];
+    const ext = path.extname(filePath).toLowerCase();
+    if (blocked.includes(ext) && !filePath.endsWith(".html")) {
+      res.setHeader("Content-Type", "text/plain");
+    }
+  },
 }));
 
 // Fallback pour les routes non trouvées
