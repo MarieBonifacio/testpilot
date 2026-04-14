@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TestPilot — Export</title>
+    <link rel="stylesheet" href="styles-prompt-library.css">
     <style>
         :root {
             --primary: #3B6D11; --primary-dark: #2d5309;
@@ -140,7 +141,14 @@ async function loadData() {
         render();
     } catch (e) {
         console.error('Erreur chargement:', e);
-        document.getElementById('appContent').innerHTML = `<div class="empty"><p>Erreur: ${e.message}</p></div>`;
+        const errEl = document.getElementById('appContent');
+        errEl.textContent = '';
+        const p = document.createElement('p');
+        p.textContent = 'Erreur: ' + e.message;
+        const div = document.createElement('div');
+        div.className = 'empty';
+        div.appendChild(p);
+        errEl.appendChild(div);
     }
 }
 
@@ -463,10 +471,13 @@ async function onProjectChange(projectId) {
 
 // Init
 TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
-    state.projectId = TestPilotAPI.getCurrentProjectId();
-    if (state.projectId) {
+    // renderProjectSelector already calls onProjectChange when auto-selecting a project.
+    // Only load if a project was previously stored but no auto-select happened.
+    const stored = TestPilotAPI.getCurrentProjectId();
+    if (stored && !state.projectId) {
+        state.projectId = stored;
         loadData();
-    } else {
+    } else if (!state.projectId) {
         renderNoProject();
     }
 });

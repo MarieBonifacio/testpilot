@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #3B6D11;
+  --primary-light: #4a8a1a;
+  --primary-dark: #2d5309;
+  --bg: #ffffff;
+  --bg-alt: #f8f9fa;
+  --text: #212529;
+  --text-muted: #6c757d;
+  --border: #dee2e6;
+  --danger: #dc3545;
+  --success: #28a745;
+  --warning: #e8a020;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.btn {
+  @apply px-4 py-2 rounded-md font-semibold transition-all duration-150 cursor-pointer;
+}
+
+.btn-primary {
+  @apply bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)];
+}
+
+.btn-secondary {
+  @apply bg-white border border-[var(--border)] text-[var(--text)] hover:border-[var(--primary)] hover:text-[var(--primary)];
+}
+
+.btn-success {
+  @apply bg-[var(--success)] text-white hover:bg-[#218838];
+}
+
+.btn-danger {
+  @apply bg-[var(--danger)] text-white hover:bg-[#c82333];
+}
+
+.input, .textarea, .select {
+  @apply w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm bg-white;
+  font-family: inherit;
+}
+
+.input:focus, .textarea:focus, .select:focus {
+  @apply outline-none border-[var(--primary)] shadow-[0_0_0_2px_rgba(59,109,17,0.15)];
+}
+
+.panel {
+  @apply bg-[var(--bg-alt)] border border-[var(--border)] rounded-lg p-4 mb-4;
+}
+
+.badge {
+  @apply inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase;
+}
+
+.badge-type {
+  @apply bg-[var(--primary)] text-white;
+}
+
+.badge-type.negative {
+  @apply bg-[var(--danger)];
+}
+
+.badge-type.edge-case {
+  @apply bg-[#17a2b8];
+}
+
+.badge-type.boundary {
+  @apply bg-[#534AB7];
+}
+
+.badge-priority {
+  @apply bg-[var(--bg-alt)] text-[var(--text-muted)] border border-[var(--border)];
+}
+
+.badge-priority.high {
+  @apply bg-[#f8d7da] text-[#721c24] border-[#f5c6cb];
+}
+
+.badge-priority.medium {
+  @apply bg-[#fff3cd] text-[#856404] border-[#ffeeba];
+}
+
+.badge-priority.low {
+  @apply bg-[#d4edda] text-[#155724] border-[#c3e6cb];
+}
+
+.loader {
+  @apply flex items-center gap-2.5 text-[var(--text-muted)] py-4;
+}
+
+.spinner {
+  @apply w-5 h-5 border-2 border-[var(--border)] border-t-[var(--primary)] rounded-full animate-spin;
+}
+
+.error-msg {
+  @apply bg-[#f8d7da] border border-[#f5c6cb] text-[#721c24] px-4 py-3 rounded-md mb-4 text-sm;
+}
+
+.scenario-card {
+  @apply border border-[var(--border)] rounded-lg p-4 bg-white transition-shadow;
+}
+
+.scenario-card:hover {
+  @apply shadow-md;
+}
+
+.scenario-card.accepted {
+  @apply border-l-4 border-l-[var(--success)];
+}
+
+.empty-state {
+  @apply text-center py-10 text-[var(--text-muted)];
+}
+
+.callout {
+  @apply px-3 py-2 mt-2 rounded;
+}
+
+.callout-amber {
+  @apply bg-[#FAEEDA] border-l-4 border-l-[#EF9F27];
+}
+
+.callout-purple {
+  @apply bg-[#EEEDFE] border-l-4 border-l-[#534AB7];
+}

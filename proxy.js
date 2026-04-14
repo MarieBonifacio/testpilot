@@ -29,7 +29,9 @@ if (!fs.existsSync(dbPath)) {
   process.exit(1);
 }
 const db = new sqlite3.Database(dbPath);
-db.run("PRAGMA foreign_keys = ON");
+db.run("PRAGMA foreign_keys = ON", (err) => {
+  if (err) console.error("⚠  Impossible d'activer les clés étrangères:", err.message);
+});
 
 // ── Middleware ───────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
@@ -183,38 +185,47 @@ app.get("/api/projects/:id/scenarios", (req, res) => {
 app.post("/api/projects/:id/scenarios", (req, res) => {
   const projectId = req.params.id;
   const scenarios = Array.isArray(req.body) ? req.body : [req.body];
-  
-  const stmt = db.prepare(`
-    INSERT INTO scenarios (project_id, scenario_id, title, scenario_type, priority, given_text, when_text, then_text, feature_name, accepted)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  
-  const inserted = [];
-  let hasError = false;
-  
+
   db.serialize(() => {
-    db.run("BEGIN TRANSACTION");
-    
-    scenarios.forEach(s => {
-      if (hasError) return;
-      stmt.run(
-        [projectId, s.id || s.scenario_id, s.title, s.type || s.scenario_type, s.priority, s.given || s.given_text, s.when || s.when_text, s.then || s.then_text, s.feature || s.feature_name, s.accepted ? 1 : 0],
-        function(err) {
-          if (err) {
-            hasError = true;
-            return;
-          }
-          inserted.push({ ...s, _dbId: this.lastID });
-        }
-      );
-    });
-    
-    db.run(hasError ? "ROLLBACK" : "COMMIT", () => {
-      stmt.finalize();
-      if (hasError) {
-        return res.status(500).json({ error: "Erreur lors de l'insertion des scénarios" });
+    db.run("BEGIN TRANSACTION", (beginErr) => {
+      if (beginErr) return res.status(500).json({ error: beginErr.message });
+
+      const stmt = db.prepare(`
+        INSERT INTO scenarios (project_id, scenario_id, title, scenario_type, priority, given_text, when_text, then_text, feature_name, accepted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const inserted = [];
+      let firstError = null;
+      let pending = scenarios.length;
+
+      if (pending === 0) {
+        stmt.finalize();
+        db.run("COMMIT", () => res.status(201).json([]));
+        return;
       }
-      res.status(201).json(inserted);
+
+      scenarios.forEach(s => {
+        stmt.run(
+          [projectId, s.id || s.scenario_id, s.title, s.type || s.scenario_type, s.priority, s.given || s.given_text, s.when || s.when_text, s.then || s.then_text, s.feature || s.feature_name, s.accepted ? 1 : 0],
+          function(err) {
+            if (err && !firstError) firstError = err;
+            if (!err) inserted.push({ ...s, _dbId: this.lastID });
+
+            pending -= 1;
+            if (pending > 0) return;
+
+            // All stmt.run callbacks have completed — safe to commit/rollback
+            stmt.finalize(() => {
+              if (firstError) {
+                db.run("ROLLBACK", () => res.status(500).json({ error: "Erreur lors de l'insertion des scénarios: " + firstError.message }));
+              } else {
+                db.run("COMMIT", () => res.status(201).json(inserted));
+              }
+            });
+          }
+        );
+      });
     });
   });
 });
@@ -499,3 +510,15 @@ app.listen(PORT, () => {
   console.log("  Ctrl+C pour arrêter");
   console.log("\x1b[0m");
 });
+
+// ── Graceful shutdown ────────────────────────────────
+function shutdown(signal) {
+  console.log(`\n[${signal}] Arrêt du serveur...`);
+  db.close((err) => {
+    if (err) console.error("Erreur fermeture DB:", err.message);
+    else console.log("Base de données fermée proprement.");
+    process.exit(0);
+  });
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT",  () => shutdown("SIGINT"));

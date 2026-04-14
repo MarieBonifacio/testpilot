@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TestPilot — Rédaction</title>
+<link rel="stylesheet" href="styles-prompt-library.css">
 <style>
 :root {
   --primary:#3B6D11; --primary-light:#4a8a1a; --primary-dark:#2d5309;
@@ -52,7 +53,7 @@ input[type=text]:focus,input[type=password]:focus,select:focus,textarea:focus{ou
 .context-toggle-label{font-size:.85rem;font-weight:600;color:var(--text-muted)}
 .context-chevron{font-size:.75rem;color:var(--text-muted);transition:transform .2s}
 .context-chevron.open{transform:rotate(90deg)}
-.context-fields{display:none;margin-top:12px;display:grid;gap:10px}
+.context-fields{display:none;margin-top:12px;gap:10px}
 .context-fields.visible{display:grid}
 
 /* Type selector */
@@ -848,9 +849,13 @@ renderProviderFields();
 
 // Initialize project selector
 TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
-  state.projectId = TestPilotAPI.getCurrentProjectId();
-  if (state.projectId) {
-    onProjectChange(state.projectId);
+  // renderProjectSelector already calls onProjectChange when auto-selecting;
+  // only trigger manually when a project was already stored (no auto-select occurred).
+  const stored = TestPilotAPI.getCurrentProjectId();
+  if (stored && stored === state.projectId) {
+    // already loaded by renderProjectSelector — nothing to do
+  } else if (stored && !state.projectId) {
+    onProjectChange(stored);
   }
 });
 </script>

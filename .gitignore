@@ -3,3 +3,6 @@ node_modules/
 testpilot.db
 *.log
 proxy.js.backup
+src-react/dist/
+src-react/node_modules/
+

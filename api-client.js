@@ -118,7 +118,14 @@ const TestPilotAPI = (function() {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    const projects = await Projects.list();
+    let projects = [];
+    try {
+      projects = await Projects.list();
+    } catch (err) {
+      console.error("Impossible de charger les projets:", err);
+      container.innerHTML = `<span style="color:#dc3545;font-size:0.85rem;">⚠ Backend inaccessible</span>`;
+      return;
+    }
     const currentId = getCurrentProjectId();
 
     container.innerHTML = `
