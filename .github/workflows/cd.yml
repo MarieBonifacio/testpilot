@@ -1,0 +1,51 @@
+name: CD — Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-and-release:
+    name: Build & GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src-react/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: src-react
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: src-react
+
+      - name: Package release archive
+        run: |
+          mkdir -p release
+          cp -r src-react/dist    release/dist
+          cp proxy.js             release/
+          cp init_db.js           release/
+          cp db_schema.sql        release/
+          cp package.json         release/
+          cp package-lock.json    release/
+          cp .env.example         release/ 2>/dev/null || true
+          cp README.md            release/
+          cd release && zip -r ../testpilot-${{ github.ref_name }}.zip .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: testpilot-${{ github.ref_name }}.zip
+          generate_release_notes: true

@@ -4,9 +4,29 @@ import { campaignsApi } from '../lib/api';
 import type { Campaign } from '../types';
 import { History, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronRight, Calendar } from 'lucide-react';
 
+/** Normalise les noms de colonnes backend → noms front uniformes */
+function normalize(c: Campaign): Required<Pick<Campaign,
+  'id'|'pass_rate'|'pass_count'|'fail_count'|'blocked_count'|'not_run_count'|'total_scenarios'|'campaign_name'|'archived_at'
+>> & Campaign {
+  return {
+    ...c,
+    campaign_name:   c.campaign_name   ?? c.name           ?? 'Campagne',
+    pass_rate:       c.pass_rate       ?? c.success_rate    ?? 0,
+    pass_count:      c.pass_count      ?? c.pass            ?? 0,
+    fail_count:      c.fail_count      ?? c.fail            ?? 0,
+    blocked_count:   c.blocked_count   ?? c.blocked         ?? 0,
+    not_run_count:   c.not_run_count   ?? c.skipped         ?? 0,
+    total_scenarios: c.total_scenarios ?? c.total           ?? 0,
+    escape_rate:     c.escape_rate     ?? c.leak_rate       ?? undefined,
+    duration_minutes: c.duration_minutes
+      ?? (c.duration_sec != null ? Math.round(c.duration_sec / 60) : undefined),
+    archived_at:     c.archived_at ?? c.finished_at ?? c.started_at ?? new Date().toISOString(),
+  } as ReturnType<typeof normalize>;
+}
+
 export function Historique() {
   const { projectId } = useProject();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [campaigns, setCampaigns] = useState<ReturnType<typeof normalize>[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<'all' | 'tnr'>('all');
@@ -25,8 +45,8 @@ export function Historique() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const data = await campaignsApi.list(projectId);
-      setCampaigns(data);
+      const raw = await campaignsApi.list(projectId);
+      setCampaigns(raw.map(normalize));
     } catch (err) {
       console.error('Erreur chargement historique:', err);
     } finally {
@@ -44,7 +64,7 @@ export function Historique() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const W = canvas.width = canvas.offsetWidth;
+    const W = canvas.width = canvas.offsetWidth || 600;
     const H = canvas.height = 140;
     ctx.clearRect(0, 0, W, H);
 
@@ -54,22 +74,16 @@ export function Historique() {
     const chartH = H - padT - padB;
     const step = rates.length > 1 ? chartW / (rates.length - 1) : chartW;
 
-    // Grid
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.lineWidth = 1;
     [0, 25, 50, 75, 100].forEach(y => {
       const yy = padT + chartH - (y / 100) * chartH;
-      ctx.beginPath();
-      ctx.moveTo(padL, yy);
-      ctx.lineTo(W - padR, yy);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'right';
+      ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
       ctx.fillText(`${y}%`, padL - 6, yy + 3);
     });
 
-    // Area
     const gradient = ctx.createLinearGradient(0, padT, 0, padT + chartH);
     gradient.addColorStop(0, 'rgba(122,162,247,0.25)');
     gradient.addColorStop(1, 'rgba(122,162,247,0)');
@@ -82,13 +96,9 @@ export function Historique() {
     ctx.lineTo(padL + (rates.length - 1) * step, padT + chartH);
     ctx.lineTo(padL, padT + chartH);
     ctx.closePath();
-    ctx.fillStyle = gradient;
-    ctx.fill();
+    ctx.fillStyle = gradient; ctx.fill();
 
-    // Line
-    ctx.strokeStyle = '#7aa2f7';
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#7aa2f7'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
     ctx.beginPath();
     rates.forEach((r, i) => {
       const x = padL + i * step;
@@ -97,17 +107,13 @@ export function Historique() {
     });
     ctx.stroke();
 
-    // Dots
     rates.forEach((r, i) => {
       const x = padL + i * step;
       const y = padT + chartH - (r / 100) * chartH;
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
       ctx.fillStyle = r >= 80 ? '#9ece6a' : r >= 50 ? '#e0af68' : '#f7768e';
       ctx.fill();
-      ctx.strokeStyle = '#0f1419';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.strokeStyle = '#0f1419'; ctx.lineWidth = 1.5; ctx.stroke();
     });
   };
 
@@ -117,10 +123,10 @@ export function Historique() {
     setExpanded(next);
   };
 
-  const trend = (c: Campaign, prev: Campaign | undefined) => {
+  const trend = (c: ReturnType<typeof normalize>, prev: ReturnType<typeof normalize> | undefined) => {
     if (!prev) return null;
     const diff = c.pass_rate - prev.pass_rate;
-    if (diff > 2) return <TrendingUp size={14} style={{ color: 'var(--success)' }} />;
+    if (diff > 2)  return <TrendingUp  size={14} style={{ color: 'var(--success)' }} />;
     if (diff < -2) return <TrendingDown size={14} style={{ color: 'var(--danger)' }} />;
     return <Minus size={14} style={{ color: 'var(--text-dim)' }} />;
   };
@@ -144,7 +150,6 @@ export function Historique() {
         <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>KPIs archivés et tendances de qualité</p>
       </header>
 
-      {/* Filtres */}
       <div className="flex gap-2 mb-5">
         {(['all', 'tnr'] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
@@ -157,7 +162,6 @@ export function Historique() {
         ))}
       </div>
 
-      {/* Chart */}
       {filtered.length >= 2 && (
         <div className="panel mb-5">
           <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Taux de succès — tendance</div>
@@ -165,26 +169,13 @@ export function Historique() {
         </div>
       )}
 
-      {/* KPIs globaux */}
       {filtered.length > 0 && (
         <div className="grid grid-cols-4 gap-3 mb-6">
           {[
-            { label: 'Campagnes', value: filtered.length, color: 'var(--text)' },
-            {
-              label: 'Taux pass moy.',
-              value: Math.round(filtered.reduce((s, c) => s + c.pass_rate, 0) / filtered.length) + '%',
-              color: 'var(--success)',
-            },
-            {
-              label: 'Meilleur taux',
-              value: Math.round(Math.max(...filtered.map(c => c.pass_rate))) + '%',
-              color: 'var(--accent)',
-            },
-            {
-              label: 'Dernier taux',
-              value: Math.round(filtered[filtered.length - 1]?.pass_rate ?? 0) + '%',
-              color: 'var(--warning)',
-            },
+            { label: 'Campagnes',     value: filtered.length,  color: 'var(--text)' },
+            { label: 'Taux pass moy.', value: Math.round(filtered.reduce((s, c) => s + c.pass_rate, 0) / filtered.length) + '%', color: 'var(--success)' },
+            { label: 'Meilleur taux', value: Math.round(Math.max(...filtered.map(c => c.pass_rate))) + '%', color: 'var(--accent)' },
+            { label: 'Dernier taux',  value: Math.round(filtered[filtered.length - 1]?.pass_rate ?? 0) + '%', color: 'var(--warning)' },
           ].map(({ label, value, color }) => (
             <div key={label} className="rounded-lg p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
               <div className="text-[0.72rem] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-dim)' }}>{label}</div>
@@ -194,24 +185,21 @@ export function Historique() {
         </div>
       )}
 
-      {/* Liste campagnes */}
       {loading && <div className="loader"><div className="spinner" /><span>Chargement…</span></div>}
 
       {!loading && filtered.length === 0 && (
         <div className="empty-state">
           <Calendar size={40} className="mx-auto mb-3 opacity-20" />
           <p>Aucune campagne archivée pour ce projet.</p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>
-            Les campagnes sont archivées automatiquement depuis la page Campagne.
-          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-dim)' }}>Les campagnes sont archivées depuis la page Campagne.</p>
         </div>
       )}
 
       <div className="space-y-3">
         {filtered.map((c, idx) => {
-          const prevCampaign = idx > 0 ? filtered[idx - 1] : undefined;
+          const prev = idx > 0 ? filtered[idx - 1] : undefined;
           const isExpanded = expanded.has(c.id);
-          const passRate = Math.round(c.pass_rate ?? 0);
+          const passRate = Math.round(c.pass_rate);
           const rateColor = passRate >= 80 ? 'var(--success)' : passRate >= 50 ? 'var(--warning)' : 'var(--danger)';
           return (
             <div key={c.id} className="rounded-lg overflow-hidden"
@@ -222,15 +210,13 @@ export function Historique() {
                   <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>{fmtDate(c.archived_at)}</div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {trend(c, prevCampaign)}
+                  {trend(c, prev)}
                   <span className="text-sm font-bold" style={{ color: rateColor }}>{passRate}%</span>
                   <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
-                    <div className="h-full rounded-full transition-all" style={{ width: `${passRate}%`, background: rateColor }} />
+                    <div className="h-full rounded-full" style={{ width: `${passRate}%`, background: rateColor }} />
                   </div>
                   <span className="text-xs" style={{ color: 'var(--text-dim)' }}>{c.total_scenarios} scén.</span>
-                  {isExpanded
-                    ? <ChevronDown size={14} style={{ color: 'var(--text-dim)' }} />
-                    : <ChevronRight size={14} style={{ color: 'var(--text-dim)' }} />}
+                  {isExpanded ? <ChevronDown size={14} style={{ color: 'var(--text-dim)' }} /> : <ChevronRight size={14} style={{ color: 'var(--text-dim)' }} />}
                 </div>
               </div>
 
@@ -238,9 +224,9 @@ export function Historique() {
                 <div className="px-4 pb-4 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
                   <div className="grid grid-cols-4 gap-3 mb-3">
                     {[
-                      { label: 'Pass',    value: c.pass_count,    color: 'var(--success)' },
-                      { label: 'Fail',    value: c.fail_count,    color: 'var(--danger)' },
-                      { label: 'Bloqué',  value: c.blocked_count, color: 'var(--purple)' },
+                      { label: 'Pass',      value: c.pass_count,    color: 'var(--success)' },
+                      { label: 'Fail',      value: c.fail_count,    color: 'var(--danger)' },
+                      { label: 'Bloqué',    value: c.blocked_count, color: 'var(--purple)' },
                       { label: 'Non exéc.', value: c.not_run_count, color: 'var(--text-muted)' },
                     ].map(({ label, value, color }) => (
                       <div key={label} className="rounded p-3 text-center" style={{ background: 'var(--bg-hover)' }}>
@@ -269,3 +255,4 @@ export function Historique() {
     </div>
   );
 }
+

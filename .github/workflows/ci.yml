@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: ["master", "main", "develop"]
+  pull_request:
+    branches: ["master", "main"]
+
+jobs:
+  # ── Backend ──────────────────────────────────────────
+  backend-lint:
+    name: Backend — lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint --if-present
+
+      - name: Syntax check proxy.js
+        run: node --check proxy.js
+
+  # ── Frontend React ───────────────────────────────────
+  frontend-build:
+    name: Frontend — typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-react
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: src-react/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: src-react/dist/
+          retention-days: 7

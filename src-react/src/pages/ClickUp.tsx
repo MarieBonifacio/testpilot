@@ -204,7 +204,7 @@ export function ClickUp() {
                 {campaigns.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.campaign_name} — {c.fail_count ?? 0} FAIL, {c.blocked_count ?? 0} BLOQUÉ
-                    ({new Date(c.archived_at).toLocaleDateString('fr-FR')})
+                    ({c.archived_at ? new Date(c.archived_at).toLocaleDateString('fr-FR') : ''})
                   </option>
                 ))}
               </select>

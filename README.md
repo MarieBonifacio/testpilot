@@ -1,25 +1,36 @@
 # TestPilot v2.0
 
-Générateur de scénarios de tests assisté par IA — avec persistance multi-projets et bibliothèque TNR.
+Générateur de scénarios de tests assisté par IA pour Carter-Cash.
+
+[![CI](https://github.com/MarieBonifacio/testpilot/actions/workflows/ci.yml/badge.svg)](https://github.com/MarieBonifacio/testpilot/actions/workflows/ci.yml)
 
 ---
 
 ## Présentation
 
-TestPilot est une application web permettant de :
-- Gérer **plusieurs projets/applicatifs** avec des scénarios séparés
-- Générer automatiquement des scénarios de tests via IA (Anthropic, OpenAI, Mistral, Ollama)
+TestPilot est une application web (React 18 + Node.js) permettant de :
+
+- Gérer **plusieurs projets/applicatifs** avec scénarios séparés (ATHENA, HERMES, HADES, etc.)
+- Générer automatiquement des scénarios de tests via IA (Anthropic Claude, OpenAI, Mistral, Ollama)
 - Analyser la complexité, les ambiguïtés et les risques de régression
 - Constituer une **bibliothèque de TNR** (Tests de Non Régression) réutilisables
-- Exécuter des campagnes de tests avec filtrage TNR
-- Exporter des livrables (HTML, JSON, rapports)
+- Exécuter des **campagnes de tests** avec KPIs et historique
+- Tracer les exigences vers les scénarios (**matrice de traçabilité**)
+- Intégrer **ClickUp** (création auto de tickets sur les FAIL/BLOQUÉ)
+- Générer des **rapports COMEP** avec score de confiance qualité
+- Gérer les utilisateurs avec **rôles et workflow de validation** (P3)
 
-**Nouveautés v2.0 :**
-- Backend SQLite pour la persistance des données
-- Gestion multi-projets (ATHENA, HERMES, HADES, etc.)
-- Marquage des scénarios comme TNR
-- Campagnes TNR dédiées
-- API REST complète
+---
+
+## Stack technique
+
+| Couche | Technologie |
+|--------|-------------|
+| Frontend | React 18 + Vite + TypeScript + Tailwind CSS |
+| Backend | Node.js + Express 5 |
+| Base de données | SQLite 3 |
+| LLM | Anthropic Claude, OpenAI, Mistral, Ollama |
+| CI/CD | GitHub Actions |
 
 ---
 
@@ -30,75 +41,50 @@ TestPilot est une application web permettant de :
 git clone https://github.com/MarieBonifacio/testpilot.git
 cd testpilot
 
-# Installer les dépendances
+# Dépendances backend
 npm install
+
+# Dépendances frontend
+cd src-react && npm install && cd ..
 
 # Configurer l'environnement
 cp .env.example .env
-# Éditer .env avec votre clé API Anthropic
+# Éditer .env avec votre clé API
 
 # Initialiser la base de données
-npm run init-db
-
-# Démarrer le serveur
-npm start
+node init_db.js
 ```
 
-Ouvrir http://localhost:3000
+---
+
+## Démarrage
+
+Deux processus à lancer en parallèle (deux terminaux) :
+
+```bash
+# Terminal 1 — Backend (port 3000)
+node proxy.js
+
+# Terminal 2 — Frontend React (port 5173)
+cd src-react
+npm run dev
+```
+
+Ouvrir **http://localhost:5173**
+
+> Le frontend proxifie automatiquement `/api` vers `localhost:3000`.
 
 ---
 
-## Commandes
+## Commandes utiles
 
-| Commande | Description |
-|----------|-------------|
-| `npm start` | Démarre le serveur |
-| `npm run init-db` | Initialise/réinitialise la base de données |
-| `npm run dev` | Init DB + démarrage (développement) |
-
----
-
-## Structure des fichiers
-
-| Fichier | Description |
-|---------|-------------|
-| `index.html` | Rédaction - génération de scénarios |
-| `dashboard.html` | Dashboard - couverture de tests |
-| `campagne.html` | Campagne - exécution et suivi |
-| `export.html` | Export - génération de livrables |
-| `proxy.js` | Serveur Express (API REST + proxy LLM) |
-| `api-client.js` | Client API JavaScript partagé |
-| `init_db.js` | Script d'initialisation de la BDD |
-| `db_schema.sql` | Schéma de la base de données |
-| `testpilot.db` | Base de données SQLite (générée) |
-
----
-
-## API REST
-
-### Projets
-- `GET /api/projects` — Liste des projets
-- `GET /api/projects/:id` — Détail d'un projet
-- `POST /api/projects` — Créer un projet
-- `PUT /api/projects/:id` — Modifier un projet
-- `DELETE /api/projects/:id` — Supprimer un projet
-
-### Scénarios
-- `GET /api/projects/:id/scenarios` — Liste des scénarios d'un projet
-- `POST /api/projects/:id/scenarios` — Créer des scénarios
-- `PUT /api/scenarios/:id` — Modifier un scénario
-- `PATCH /api/scenarios/:id/accept` — Basculer l'état accepté
-- `PATCH /api/scenarios/:id/tnr` — Basculer le marquage TNR
-- `DELETE /api/scenarios/:id` — Supprimer un scénario
-
-### Sessions de test
-- `GET /api/projects/:id/sessions` — Liste des sessions
-- `POST /api/projects/:id/sessions` — Créer une session
-- `GET /api/sessions/:id` — Détail avec résultats
-- `POST /api/sessions/:id/results` — Enregistrer un résultat
-
-### Statistiques
-- `GET /api/projects/:id/stats` — Statistiques du projet
+| Commande | Répertoire | Description |
+|----------|-----------|-------------|
+| `node proxy.js` | racine | Démarre le serveur backend |
+| `node init_db.js` | racine | Initialise/migre la base de données |
+| `npm run dev` | `src-react/` | Lance le front en mode développement |
+| `npm run build` | `src-react/` | Compile le front pour la production |
+| `npx tsc --noEmit` | `src-react/` | Vérifie les types TypeScript sans builder |
 
 ---
 
@@ -111,70 +97,149 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 PORT=3000
 ```
 
-### Projets pré-configurés
+### Compte admin initial
 
-La base de données est initialisée avec les projets Carter-Cash :
-- ATHENA (ERP historique)
-- HERMES (Encaissement Italie/Espagne)
-- HADES (Gestion des pneus)
-- Open Bravo (SaaS encaissement)
-- APIs, Batch, Site Web, Semarchy
+Au premier démarrage, créer un compte via `POST /api/auth/register` (libre si la base est vide).
+Les créations suivantes nécessitent un token admin.
 
----
+Exemple :
+```bash
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"Admin2026!","display_name":"Admin","role":"admin"}'
+```
 
-## Fonctionnalités
+### Projets pré-configurés Carter-Cash
 
-### Rédaction (index.html)
-- **Sélecteur de projet** dans la navbar
-- **Création de projets** via le bouton "+"
-- 4 fournisseurs LLM (Anthropic, OpenAI, Mistral, Ollama)
-- Analyse automatique (feature, complexité, ambiguïtés)
-- Scénarios avec Given/When/Then
-- **Marquage TNR** par scénario
-- Actions : Accepter, TNR, Modifier, Supprimer
-
-### Dashboard (dashboard.html)
-- 5 métriques (Total, Acceptés, TNR, Critiques, Non couverts)
-- Barre de progression globale
-- Groupement par feature avec badge TNR
-
-### Campagne (campagne.html)
-- **Filtre TNR** pour exécuter uniquement les tests de non régression
-- Progression (pass/fail/blocked/pending)
-- Commentaires par scénario
-- Résultats avec horodatages
-
-### Export (export.html)
-- 4 formats (HTML complet, HTML scénarios, JSON brut, JSON résultats)
-- **Option TNR uniquement**
-- Badge TNR dans les rapports
+La base est initialisée avec :
+`ATHENA` · `HERMES` · `HADES` · `Open Bravo` · `KEPLER` · `APIs` · `Batch` · `Site Web` · `Semarchy`
 
 ---
 
-## Roadmap
+## Structure du projet
 
-### P1 - Prochaines évolutions (haute priorité)
-- Import Excel des cahiers de tests existants
-- Historique des campagnes avec KPIs
-- Traçabilité exigence ↔ scénario
-
-### P2 - À court terme (priorité moyenne)
-- Intégration ClickUp (création auto de tickets)
-- Rapports COMEP (synthétique, score de confiance)
-
-### P3 - À plus long terme (priorité basse)
-- Mode multi-utilisateur / rôles
-- Assignation de scénarios
-- Workflow de validation
+```
+testpilot/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml          # CI — typecheck + build sur push/PR
+│       └── cd.yml          # CD — release archive sur tag vX.Y.Z
+├── proxy.js                # Serveur Express (~1600 lignes) — API REST + proxy LLM
+├── init_db.js              # Migrations SQLite (P0 → P3)
+├── db_schema.sql           # Schéma de référence
+├── package.json            # Dépendances backend
+├── testpilot.db            # BDD SQLite (ignorée git)
+└── src-react/              # Frontend React
+    ├── vite.config.ts      # Port 5173, proxy /api → :3000
+    ├── package.json
+    └── src/
+        ├── App.tsx         # Routeur + navigation + RequireAuth
+        ├── types/          # Types TypeScript partagés
+        ├── lib/
+        │   ├── api.ts      # Tous les appels API
+        │   └── hooks.tsx   # ProjectProvider, AuthProvider, useNotifications
+        ├── components/
+        │   ├── ProjectSelector.tsx
+        │   └── NotificationBell.tsx
+        └── pages/          # 11 pages (Redaction, Dashboard, Campagne, Import,
+                            #  Historique, Tracabilite, ClickUp, Comep,
+                            #  Export, Login, Users)
+```
 
 ---
 
-## Stack technique
+## CI/CD
 
-- **Frontend** : HTML5 / CSS3 / JavaScript vanilla
-- **Backend** : Node.js + Express 5
-- **Base de données** : SQLite 3
-- **LLM** : Anthropic Claude, OpenAI, Mistral, Ollama
+### Pipeline CI (`.github/workflows/ci.yml`)
+
+Déclenché sur chaque **push** et **pull request** vers `master` / `main` :
+
+| Étape | Description |
+|-------|-------------|
+| `backend-lint` | Vérification syntaxe `proxy.js` via `node --check` |
+| `frontend-build` | `tsc --noEmit` + `vite build` — bloque si erreur TS ou build cassé |
+| Upload artifact | Le `dist/` buildé est conservé 7 jours |
+
+### Pipeline CD (`.github/workflows/cd.yml`)
+
+Déclenché sur chaque **tag** `vX.Y.Z` :
+
+- Build complet backend + frontend
+- Génération d'une archive `testpilot-vX.Y.Z.zip`
+- Création d'une **GitHub Release** avec notes automatiques
+
+### Hook pre-commit local
+
+Un hook `.git/hooks/pre-commit` vérifie automatiquement :
+- Le build TypeScript si des fichiers `src-react/` sont stagés
+- La syntaxe de `proxy.js` s'il est stagé
+
+Pour bypasser ponctuellement : `git commit --no-verify`
+
+---
+
+## API REST — Référence rapide
+
+### Auth
+- `POST /api/auth/register` — Créer un utilisateur (admin requis sauf bootstrap)
+- `POST /api/auth/login` — Connexion → token
+- `POST /api/auth/logout` — Déconnexion
+- `GET  /api/auth/me` — Profil courant
+
+### Projets
+- `GET    /api/projects` — Liste
+- `POST   /api/projects` — Créer
+- `PUT    /api/projects/:id` — Modifier
+- `DELETE /api/projects/:id` — Supprimer
+
+### Scénarios
+- `GET    /api/projects/:id/scenarios` — Liste
+- `POST   /api/projects/:id/scenarios` — Créer
+- `PUT    /api/scenarios/:id` — Modifier
+- `PATCH  /api/scenarios/:id/accept` — Basculer accepté
+- `PATCH  /api/scenarios/:id/tnr` — Basculer TNR
+- `PATCH  /api/scenarios/:id/reference` — Modifier référence exigence
+- `DELETE /api/scenarios/:id` — Supprimer
+
+### Campagnes & Historique
+- `GET  /api/projects/:id/campaigns` — Historique campagnes avec KPIs
+- `POST /api/projects/:id/sessions` — Créer une session de test
+- `GET  /api/sessions/:id` — Détail session + résultats
+- `POST /api/sessions/:id/results` — Enregistrer résultats
+- `POST /api/sessions/:id/archive` — Archiver la campagne
+
+### Traçabilité
+- `GET /api/projects/:id/coverage-matrix` — Matrice exigences ↔ scénarios
+
+### Import
+- `POST /api/projects/:id/import` — Importer scénarios depuis Excel/JSON
+
+### ClickUp
+- `GET  /api/projects/:id/clickup/config` — Configuration ClickUp
+- `POST /api/projects/:id/clickup/config` — Sauvegarder config
+- `GET  /api/projects/:id/clickup/lists` — Listes ClickUp disponibles
+- `POST /api/projects/:id/clickup/push` — Créer tickets FAIL/BLOQUÉ
+
+### COMEP
+- `GET /api/projects/:id/comep` — Rapport COMEP avec score de confiance
+
+### Utilisateurs & Notifications
+- `GET    /api/users` — Liste des utilisateurs (admin)
+- `POST   /api/users` — Créer un utilisateur (admin)
+- `DELETE /api/users/:id` — Supprimer (admin)
+- `GET    /api/notifications` — Notifications de l'utilisateur courant
+- `PATCH  /api/notifications/:id/read` — Marquer comme lu
+
+---
+
+## Rôles utilisateurs
+
+| Rôle | Droits |
+|------|--------|
+| `automaticien` | Rédaction, exécution campagnes, import |
+| `cp` | + Validation scénarios, historique complet |
+| `key_user` | Consultation, feedback sur scénarios |
+| `admin` | Accès total, gestion utilisateurs |
 
 ---
 

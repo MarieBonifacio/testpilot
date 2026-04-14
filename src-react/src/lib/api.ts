@@ -187,7 +187,9 @@ export const campaignsApi = {
 // ══════════════════════════════════════════════════════
 export const traceabilityApi = {
   getCoverageMatrix: (projectId: number) =>
-    api.get<CoverageMatrixRow[]>(`/api/projects/${projectId}/coverage-matrix`),
+    api.get<{ matrix: CoverageMatrixRow[]; stats: Record<string, number> }>(
+      `/api/projects/${projectId}/coverage-matrix`
+    ),
 };
 
 // ══════════════════════════════════════════════════════

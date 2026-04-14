@@ -85,27 +85,40 @@ export interface ImportPreviewRow {
 }
 
 // ── P1.2 Historique campagnes ────────────────────────
+// Champs backend (name/pass/fail/blocked/success_rate) + aliases front
 export interface Campaign {
   id: number;
   project_id: number;
-  campaign_name: string;
-  session_id?: number;
-  total_scenarios: number;
-  pass_count: number;
-  fail_count: number;
-  blocked_count: number;
-  not_run_count: number;
+  name?: string;            // champ BDD réel
+  campaign_name?: string;   // alias front
+  type?: string;
+  started_at?: string;
+  finished_at?: string;
+  archived_at?: string;
+  total?: number;
+  total_scenarios?: number;
+  pass?: number;
+  pass_count?: number;
+  fail?: number;
+  fail_count?: number;
+  blocked?: number;
+  blocked_count?: number;
+  skipped?: number;
+  not_run_count?: number;
   tnr_count?: number;
   tnr_pass?: number;
-  pass_rate: number;
-  escape_rate?: number;
+  success_rate?: number;    // champ BDD réel
+  pass_rate?: number;       // alias front
+  leak_rate?: number;       // champ BDD réel
+  escape_rate?: number;     // alias front
+  duration_sec?: number;
   duration_minutes?: number;
-  archived_at: string;
 }
 
 // ── P1.3 Traçabilité ─────────────────────────────────
 export interface CoverageMatrixRow {
-  source_reference: string;
+  source_reference: string | null;
+  label: string;
   scenarios: {
     id: number;
     scenario_id: string;
@@ -113,9 +126,16 @@ export interface CoverageMatrixRow {
     accepted: boolean;
     is_tnr: boolean;
     priority: string;
+    scenario_type: string;
     validation_status?: string;
   }[];
+  total: number;
+  accepted: number;
+  tnr: number;
+  coverage_pct: number;
 }
+
+
 
 // ── P2.1 ClickUp ─────────────────────────────────────
 export interface ClickUpConfig {
