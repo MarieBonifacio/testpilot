@@ -17,6 +17,7 @@ const sqlite3 = require("sqlite3").verbose();
 const https   = require("https");
 const path    = require("path");
 const fs      = require("fs");
+const XLSX    = require("xlsx");
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +36,7 @@ db.run("PRAGMA foreign_keys = ON", (err) => {
 
 // ── Middleware ───────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
+app.use(express.raw({ type: "application/octet-stream", limit: "20mb" }));
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -433,8 +435,312 @@ app.get("/api/projects/:id/stats", (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════
-// ██  PROXY LLM APIs
+// ██  API IMPORT EXCEL
 // ══════════════════════════════════════════════════════
+
+/**
+ * POST /api/projects/:id/import-excel
+ * Corps : application/octet-stream (fichier .xlsx brut)
+ * Analyse chaque ligne du premier onglet et retourne un tableau
+ * de cas de tests normalisés en Given/When/Then via l'IA.
+ * Sans clé IA : retourne les lignes brutes sans normalisation.
+ */
+app.post("/api/projects/:id/import-excel", (req, res) => {
+  const projectId = req.params.id;
+
+  // Le corps peut être Buffer (raw) ou { base64: "..." } (json)
+  let buffer;
+  if (Buffer.isBuffer(req.body)) {
+    buffer = req.body;
+  } else if (req.body && req.body.base64) {
+    buffer = Buffer.from(req.body.base64, "base64");
+  } else {
+    return res.status(400).json({ error: "Corps de la requête invalide. Envoyez le fichier .xlsx en binaire ou base64." });
+  }
+
+  let workbook;
+  try {
+    workbook = XLSX.read(buffer, { type: "buffer" });
+  } catch (e) {
+    return res.status(400).json({ error: "Impossible de lire le fichier Excel : " + e.message });
+  }
+
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+  if (rows.length === 0) {
+    return res.status(400).json({ error: "Le fichier Excel est vide ou ne contient pas de données exploitables." });
+  }
+
+  // Détection automatique des colonnes
+  const keys = Object.keys(rows[0]);
+
+  // Helpers pour trouver une colonne par mots-clés (insensible à la casse)
+  function findCol(candidates) {
+    return keys.find(k => candidates.some(c => k.toLowerCase().includes(c.toLowerCase()))) || null;
+  }
+
+  const colTitle    = findCol(["titre", "title", "cas de test", "intitulé", "libellé", "nom", "name"]);
+  const colGiven    = findCol(["given", "étant donné", "precondition", "pré-condition", "contexte", "prérequis"]);
+  const colWhen     = findCol(["when", "quand", "action", "étape", "step", "operation"]);
+  const colThen     = findCol(["then", "alors", "résultat attendu", "expected", "résultat", "attendu"]);
+  const colPriority = findCol(["priorité", "priority", "criticité", "criticite", "sévérité", "severite"]);
+  const colFeature  = findCol(["feature", "fonctionnalité", "module", "fonction", "composant"]);
+  const colType     = findCol(["type", "scenario_type", "nature"]);
+  const colRef      = findCol(["référence", "ref", "id", "exigence", "requirement", "user story", "us"]);
+  const colDesc     = findCol(["description", "desc", "détail", "detail", "contenu"]);
+
+  // Nettoyage d'une valeur cellule
+  function cell(row, col) {
+    if (!col) return "";
+    return String(row[col] || "").trim();
+  }
+
+  // Normaliser la priorité
+  function normPriority(raw) {
+    const v = raw.toLowerCase();
+    if (["haute", "high", "critique", "critical", "h", "1", "p1"].includes(v)) return "high";
+    if (["moyenne", "medium", "moyen", "m", "2", "p2"].includes(v)) return "medium";
+    if (["basse", "low", "faible", "l", "3", "p3"].includes(v)) return "low";
+    return "medium";
+  }
+
+  // Normaliser le type
+  function normType(raw) {
+    const v = raw.toLowerCase();
+    if (v.includes("négatif") || v.includes("negatif") || v.includes("neg") || v.includes("erreur")) return "negative";
+    if (v.includes("limite") || v.includes("bound") || v.includes("bornage")) return "boundary";
+    if (v.includes("edge") || v.includes("cas limite") || v.includes("coin")) return "edge-case";
+    return "functional";
+  }
+
+  const parsed = rows
+    .filter(row => {
+      // Ignorer les lignes vides ou en-têtes
+      const vals = Object.values(row).map(v => String(v).trim()).filter(Boolean);
+      return vals.length > 1;
+    })
+    .map((row, i) => {
+      const title    = cell(row, colTitle) || `Cas de test ${i + 1}`;
+      const givenRaw = cell(row, colGiven);
+      const whenRaw  = cell(row, colWhen);
+      const thenRaw  = cell(row, colThen);
+      const descRaw  = cell(row, colDesc);
+
+      // Si pas de colonnes GWT détectées, on met la description complète en "when"
+      const given = givenRaw || "Le système est dans son état initial";
+      const when  = whenRaw  || descRaw || title;
+      const then  = thenRaw  || "Le système se comporte correctement";
+
+      const priorityRaw = cell(row, colPriority);
+      const typeRaw     = cell(row, colType);
+      const feature     = cell(row, colFeature);
+      const ref         = cell(row, colRef);
+
+      return {
+        scenario_id:      `IMP-${String(i + 1).padStart(3, "0")}`,
+        title,
+        scenario_type:    typeRaw ? normType(typeRaw) : "functional",
+        priority:         priorityRaw ? normPriority(priorityRaw) : "medium",
+        given_text:       given,
+        when_text:        when,
+        then_text:        then,
+        feature_name:     feature || null,
+        source_reference: ref || null,
+        raw_row:          row,   // gardé pour affichage dans la prévisualisation
+        needs_ai:         !givenRaw || !whenRaw || !thenRaw,
+        columns_detected: { colTitle, colGiven, colWhen, colThen, colPriority, colFeature, colType, colRef }
+      };
+    });
+
+  res.json({
+    sheet_name:  sheetName,
+    total_rows:  rows.length,
+    parsed_count: parsed.length,
+    columns_detected: { colTitle, colGiven, colWhen, colThen, colPriority, colFeature, colType, colRef },
+    scenarios: parsed
+  });
+});
+
+// ══════════════════════════════════════════════════════
+// ██  API CAMPAIGN HISTORY (P1.2)
+// ══════════════════════════════════════════════════════
+
+/**
+ * POST /api/projects/:id/campaigns  — Enregistre une campagne terminée
+ * Body: { name, type, started_at, finished_at, total, pass, fail, blocked, skipped, results[] }
+ */
+app.post("/api/projects/:id/campaigns", (req, res) => {
+  const projectId = req.params.id;
+  const { name, type, started_at, finished_at, total, pass, fail, blocked, skipped, results } = req.body;
+
+  db.run(`
+    INSERT INTO campaigns (project_id, name, type, started_at, finished_at, total, pass, fail, blocked, skipped, results_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [projectId, name || "Campagne", type || "ALL", started_at, finished_at, total || 0, pass || 0, fail || 0, blocked || 0, skipped || 0, JSON.stringify(results || [])],
+  function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.status(201).json({ id: this.lastID });
+  });
+});
+
+/**
+ * GET /api/projects/:id/campaigns  — Liste toutes les campagnes d'un projet
+ */
+app.get("/api/projects/:id/campaigns", (req, res) => {
+  db.all(`
+    SELECT id, project_id, name, type, started_at, finished_at,
+           total, pass, fail, blocked, skipped,
+           CASE WHEN total > 0 THEN ROUND(pass * 100.0 / total, 1) ELSE 0 END as success_rate,
+           CASE WHEN total > 0 THEN ROUND((fail + blocked) * 100.0 / total, 1) ELSE 0 END as leak_rate,
+           CAST((strftime('%s', finished_at) - strftime('%s', started_at)) AS INTEGER) as duration_sec
+    FROM campaigns
+    WHERE project_id = ?
+    ORDER BY finished_at DESC
+  `, [req.params.id], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+/**
+ * GET /api/campaigns/:id  — Détail d'une campagne avec résultats complets
+ */
+app.get("/api/campaigns/:id", (req, res) => {
+  db.get("SELECT * FROM campaigns WHERE id = ?", [req.params.id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: "Campagne non trouvée" });
+    row.results = JSON.parse(row.results_json || "[]");
+    delete row.results_json;
+    res.json(row);
+  });
+});
+
+/**
+ * DELETE /api/campaigns/:id  — Supprimer une campagne
+ */
+app.delete("/api/campaigns/:id", (req, res) => {
+  db.run("DELETE FROM campaigns WHERE id = ?", [req.params.id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: "Campagne non trouvée" });
+    res.json({ deleted: true });
+  });
+});
+
+/**
+ * GET /api/projects/:id/coverage-matrix
+ * Retourne la matrice exigence ↔ scénario, groupée par source_reference.
+ * Les scénarios sans référence sont regroupés sous "Sans référence".
+ */
+app.get("/api/projects/:id/coverage-matrix", (req, res) => {
+  const projectId = req.params.id;
+
+  db.all(`
+    SELECT id, scenario_id, title, scenario_type, priority,
+           feature_name, source_reference, accepted, is_tnr,
+           given_text, when_text, then_text
+    FROM scenarios
+    WHERE project_id = ?
+    ORDER BY COALESCE(source_reference, 'ZZZ'), feature_name, scenario_id
+  `, [projectId], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    // Grouper par source_reference
+    const groups = {};
+    for (const row of rows) {
+      const ref = row.source_reference || null;
+      const key = ref || "__NONE__";
+      if (!groups[key]) {
+        groups[key] = { reference: ref, label: ref || "Sans référence", scenarios: [] };
+      }
+      groups[key].scenarios.push(row);
+    }
+
+    // Calcul des stats par groupe
+    const matrix = Object.values(groups).map(g => {
+      const total    = g.scenarios.length;
+      const accepted = g.scenarios.filter(s => s.accepted).length;
+      const tnr      = g.scenarios.filter(s => s.is_tnr).length;
+      const byType   = {};
+      const byPriority = {};
+      for (const s of g.scenarios) {
+        byType[s.scenario_type] = (byType[s.scenario_type] || 0) + 1;
+        byPriority[s.priority]  = (byPriority[s.priority]  || 0) + 1;
+      }
+      const coverage_pct = total > 0 ? Math.round(accepted / total * 100) : 0;
+      return { ...g, total, accepted, tnr, coverage_pct, byType, byPriority };
+    });
+
+    // Stats globales
+    const allScenarios = rows.length;
+    const withRef      = rows.filter(r => r.source_reference).length;
+    const withoutRef   = allScenarios - withRef;
+    const uniqueRefs   = Object.keys(groups).filter(k => k !== "__NONE__").length;
+
+    res.json({
+      matrix,
+      stats: { allScenarios, withRef, withoutRef, uniqueRefs }
+    });
+  });
+});
+
+/**
+ * PUT /api/scenarios/:id/reference  — Mettre à jour la référence source d'un scénario
+ */
+app.put("/api/scenarios/:id/reference", (req, res) => {
+  const { source_reference } = req.body;
+  db.run(
+    "UPDATE scenarios SET source_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [source_reference || null, req.params.id],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: "Scénario non trouvé" });
+      res.json({ updated: true, source_reference: source_reference || null });
+    }
+  );
+});
+
+
+app.get("/api/projects/:id/campaigns/kpis", (req, res) => {
+  const projectId = req.params.id;
+  db.all(`
+    SELECT id, name, type, started_at, finished_at, total, pass, fail, blocked, skipped,
+           CASE WHEN total > 0 THEN ROUND(pass * 100.0 / total, 1) ELSE 0 END as success_rate,
+           CASE WHEN total > 0 THEN ROUND((fail + blocked) * 100.0 / total, 1) ELSE 0 END as leak_rate,
+           CAST((strftime('%s', finished_at) - strftime('%s', started_at)) AS INTEGER) as duration_sec
+    FROM campaigns
+    WHERE project_id = ?
+    ORDER BY finished_at ASC
+  `, [projectId], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (rows.length === 0) return res.json({ campaigns: [], aggregates: null });
+
+    const totalCampaigns = rows.length;
+    const avgSuccess = rows.reduce((s, r) => s + (r.success_rate || 0), 0) / totalCampaigns;
+    const avgLeak    = rows.reduce((s, r) => s + (r.leak_rate    || 0), 0) / totalCampaigns;
+    const avgDur     = rows.filter(r => r.duration_sec > 0).reduce((s, r) => s + r.duration_sec, 0) / (rows.filter(r => r.duration_sec > 0).length || 1);
+
+    // Tendance (dernière vs avant-dernière)
+    const trend = rows.length >= 2
+      ? rows[rows.length - 1].success_rate - rows[rows.length - 2].success_rate
+      : null;
+
+    res.json({
+      campaigns: rows,
+      aggregates: {
+        total_campaigns: totalCampaigns,
+        avg_success_rate: Math.round(avgSuccess * 10) / 10,
+        avg_leak_rate:    Math.round(avgLeak * 10) / 10,
+        avg_duration_sec: Math.round(avgDur),
+        trend_vs_previous: trend !== null ? Math.round(trend * 10) / 10 : null
+      }
+    });
+  });
+});
+
+
 
 // POST /api/messages - Proxy Anthropic
 app.post("/api/messages", (req, res) => {

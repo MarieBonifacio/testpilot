@@ -30,13 +30,48 @@ const db = new sqlite3.Database(dbPath, (err) => {
       } else {
         console.log('Database schema initialized successfully');
         
-        if (!dbExists) {
-          console.log('Database created with default Carter-Cash projects');
-        } else {
-          console.log('Database already existed, schema applied');
-        }
-        
-        db.close();
+        // ── Migrations additionnelles (idempotentes) ──────────────────
+        const migrations = [
+          // P1.2 : table campaigns (déjà dans le schéma, migration pour BDD existantes)
+          `CREATE TABLE IF NOT EXISTS campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            name TEXT,
+            type TEXT DEFAULT 'ALL',
+            started_at DATETIME,
+            finished_at DATETIME,
+            total INTEGER DEFAULT 0,
+            pass INTEGER DEFAULT 0,
+            fail INTEGER DEFAULT 0,
+            blocked INTEGER DEFAULT 0,
+            skipped INTEGER DEFAULT 0,
+            results_json TEXT DEFAULT '[]',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_campaigns_project ON campaigns(project_id)`,
+          `CREATE INDEX IF NOT EXISTS idx_campaigns_finished ON campaigns(finished_at)`,
+          // P1.3 : champ source_reference sur scenarios (peut déjà exister)
+          `ALTER TABLE scenarios ADD COLUMN source_reference TEXT`
+        ];
+
+        let pending = migrations.length;
+        migrations.forEach(sql => {
+          db.run(sql, (err) => {
+            if (err && !err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+              console.warn('Migration warning:', err.message);
+            }
+            pending--;
+            if (pending === 0) {
+              if (!dbExists) {
+                console.log('Database created with default Carter-Cash projects');
+              } else {
+                console.log('Database already existed, migrations applied');
+              }
+              db.close();
+            }
+          });
+        });
       }
     });
   }

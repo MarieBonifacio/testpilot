@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestPilot — Traçabilité</title>
+    <link rel="stylesheet" href="styles-prompt-library.css">
+    <style>
+        :root {
+            --primary: #3B6D11;
+            --primary-dark: #2d5309;
+            --bg: #ffffff;
+            --bg-alt: #f8f9fa;
+            --text: #212529;
+            --text-muted: #6c757d;
+            --border: #dee2e6;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #e8a020;
+            --purple: #534AB7;
+            --purple-light: #EEEDFE;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-alt); color: var(--text); min-height: 100vh; }
+
+        .nav { background: white; border-bottom: 2px solid var(--primary); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+        .nav-brand { color: var(--primary); font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; text-decoration: none; }
+        .nav-brand::before { content: '✈'; }
+        .nav-links { display: flex; gap: 4px; }
+        .nav-link { padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; text-decoration: none; color: var(--text-muted); transition: all .15s; }
+        .nav-link:hover { background: var(--bg-alt); color: var(--text); }
+        .nav-link.active { background: rgba(59,109,17,0.1); color: var(--primary); }
+
+        .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+
+        .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
+        .page-header h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
+        .page-header p { color: var(--text-muted); font-size: 0.9rem; }
+        .page-actions { display: flex; gap: 10px; }
+
+        /* KPI row */
+        .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+        .kpi-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+        .kpi-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); margin-bottom: 8px; }
+        .kpi-val { font-size: 1.9rem; font-weight: 700; line-height: 1; }
+        .kpi-val.green  { color: var(--success); }
+        .kpi-val.red    { color: var(--danger); }
+        .kpi-val.amber  { color: var(--warning); }
+        .kpi-val.gray   { color: var(--text-muted); }
+        .kpi-val.purple { color: var(--purple); }
+        .kpi-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 5px; }
+
+        /* Filter/search */
+        .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .search-input { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; font-family: inherit; min-width: 240px; }
+        .search-input:focus { outline: none; border-color: var(--primary); }
+        .filter-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: .15s; }
+        .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .toolbar-sep { flex: 1; }
+        .btn-export { padding: 8px 16px; border: 1px solid var(--primary); border-radius: 6px; background: white; color: var(--primary); font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-export:hover { background: var(--primary); color: white; }
+        .refresh-btn { font-size: 0.85rem; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; color: var(--text-muted); cursor: pointer; font-family: inherit; transition: .15s; }
+        .refresh-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* Matrix table */
+        .matrix-wrap { background: white; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 28px; }
+        table.matrix { width: 100%; border-collapse: collapse; }
+        thead tr { background: var(--bg-alt); }
+        th { padding: 10px 14px; font-size: 0.73rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); text-align: left; border-bottom: 2px solid var(--border); white-space: nowrap; }
+        .matrix tbody tr { border-bottom: 1px solid var(--bg-alt); }
+        .matrix tbody tr:last-child { border-bottom: none; }
+        .matrix tbody tr.group-header td { background: var(--bg-alt); font-weight: 700; }
+        .matrix tbody tr.group-header:hover td { background: #eef2e8; }
+        .matrix tbody tr.sc-row td { font-size: 0.85rem; }
+        .matrix tbody tr.sc-row:hover td { background: #fafafa; }
+        td { padding: 10px 14px; vertical-align: middle; }
+
+        .td-ref { font-family: monospace; font-weight: 700; font-size: 0.82rem; color: var(--primary); white-space: nowrap; }
+        .td-ref-none { font-style: italic; color: var(--text-muted); }
+        .td-coverage { white-space: nowrap; }
+        .cov-bar-wrap { display: flex; align-items: center; gap: 8px; }
+        .cov-bar { width: 90px; height: 6px; background: var(--bg-alt); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+        .cov-bar-fill { height: 100%; border-radius: 3px; }
+        .cov-bar-fill.green  { background: var(--success); }
+        .cov-bar-fill.amber  { background: var(--warning); }
+        .cov-bar-fill.red    { background: var(--danger); }
+        .cov-pct { font-size: 0.82rem; font-weight: 700; min-width: 36px; }
+        .cov-pct.green  { color: var(--success); }
+        .cov-pct.amber  { color: var(--warning); }
+        .cov-pct.red    { color: var(--danger); }
+
+        .td-sc-id { font-family: monospace; font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+        .td-sc-title { max-width: 280px; }
+        .td-sc-title .sc-name { font-weight: 500; }
+        .td-sc-title .sc-feature { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+        .badge { font-size: 0.68rem; padding: 2px 7px; border-radius: 20px; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
+        .badge.functional { background: #d4edda; color: #155724; }
+        .badge.negative   { background: #f8d7da; color: #721c24; }
+        .badge.edge-case  { background: #d1ecf1; color: #0c5460; }
+        .badge.boundary   { background: var(--purple-light); color: var(--purple); }
+        .badge.high   { background: #f8d7da; color: #721c24; }
+        .badge.medium { background: #fff3cd; color: #856404; }
+        .badge.low    { background: #d4edda; color: #155724; }
+        .badge.tnr    { background: var(--purple); color: white; }
+        .badge.accepted   { background: #d4edda; color: #155724; }
+        .badge.pending    { background: var(--bg-alt); color: var(--text-muted); border: 1px solid var(--border); }
+
+        /* Inline ref edit */
+        .ref-cell { display: flex; align-items: center; gap: 8px; }
+        .ref-input { padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.8rem; font-family: monospace; width: 130px; }
+        .ref-input:focus { outline: none; border-color: var(--primary); }
+        .btn-ref-save { padding: 3px 8px; border: 1px solid var(--primary); border-radius: 4px; background: white; color: var(--primary); font-size: 0.75rem; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-ref-save:hover { background: var(--primary); color: white; }
+
+        /* Expand chevron */
+        .chevron { font-size: 0.72rem; color: var(--text-muted); transition: transform .2s; cursor: pointer; }
+        .chevron.open { transform: rotate(90deg); }
+
+        /* Count pill */
+        .count-pill { display: inline-block; background: var(--border); color: var(--text-muted); font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 6px; }
+
+        /* Empty */
+        .empty { text-align: center; padding: 60px 20px; color: var(--text-muted); background: white; border: 1px solid var(--border); border-radius: 10px; }
+        .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .empty a { color: var(--primary); text-decoration: none; font-weight: 600; }
+
+        /* COMEP export info */
+        .comep-info { background: #cce5ff; border: 1px solid #b8daff; color: #004085; border-radius: 8px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 20px; }
+
+        @media (max-width: 900px) {
+            .kpi-row { grid-template-columns: repeat(2, 1fr); }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<nav class="nav">
+    <a class="nav-brand" href="index.html">TestPilot</a>
+    <div id="projectSelectorContainer"></div>
+    <div class="nav-links">
+        <a class="nav-link" href="index.html">Rédaction</a>
+        <a class="nav-link" href="dashboard.html">Dashboard</a>
+        <a class="nav-link" href="campagne.html">Campagne</a>
+        <a class="nav-link" href="historique.html">Historique</a>
+        <a class="nav-link" href="import.html">Import</a>
+        <a class="nav-link active" href="tracabilite.html">Traçabilité</a>
+        <a class="nav-link" href="export.html">Export</a>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <div>
+            <h2>Matrice de couverture — Traçabilité exigences</h2>
+            <p>Lien entre chaque référence (US, SFD, exigence) et les scénarios de test associés.</p>
+        </div>
+        <div class="page-actions">
+            <button class="refresh-btn" onclick="loadData()">↻ Actualiser</button>
+            <button class="btn-export" onclick="exportCSV()">Exporter CSV (COMEP)</button>
+        </div>
+    </div>
+
+    <div id="appContent"></div>
+</div>
+
+<script src="api-client.js"></script>
+<script>
+"use strict";
+
+function esc(t) { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
+
+let state = {
+    projectId: null,
+    matrix: [],
+    stats: null,
+    filter: 'ALL',   // ALL | REF | NOREF
+    search: '',
+    expanded: {}     // groupId → bool
+};
+
+async function loadData() {
+    if (!state.projectId) {
+        document.getElementById('appContent').innerHTML = renderEmpty('project');
+        return;
+    }
+    try {
+        const data = await TestPilotAPI.Scenarios.coverageMatrix(state.projectId);
+        state.matrix = data.matrix || [];
+        state.stats  = data.stats  || null;
+        render();
+    } catch (e) {
+        document.getElementById('appContent').innerHTML = `<div class="empty"><p>Erreur : ${esc(e.message)}</p></div>`;
+    }
+}
+
+function getFiltered() {
+    const q = state.search.toLowerCase();
+    return state.matrix.filter(g => {
+        if (state.filter === 'REF'   && !g.reference) return false;
+        if (state.filter === 'NOREF' &&  g.reference) return false;
+        if (!q) return true;
+        if (g.label.toLowerCase().includes(q)) return true;
+        return g.scenarios.some(s => s.title.toLowerCase().includes(q) || (s.feature_name||'').toLowerCase().includes(q));
+    });
+}
+
+function coverageColor(pct) {
+    return pct >= 80 ? 'green' : pct >= 50 ? 'amber' : 'red';
+}
+
+function render() {
+    const app = document.getElementById('appContent');
+    const filtered = getFiltered();
+    const s = state.stats;
+
+    if (!s || state.matrix.length === 0) {
+        app.innerHTML = renderEmpty('no-data');
+        return;
+    }
+
+    const refPct = s.allScenarios > 0 ? Math.round(s.withRef / s.allScenarios * 100) : 0;
+
+    app.innerHTML = `
+        <div class="kpi-row">
+            <div class="kpi-card">
+                <div class="kpi-label">Scénarios total</div>
+                <div class="kpi-val gray">${s.allScenarios}</div>
+                <div class="kpi-sub">tous projets</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Référencés</div>
+                <div class="kpi-val green">${s.withRef}</div>
+                <div class="kpi-sub">${refPct}% avec référence</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Sans référence</div>
+                <div class="kpi-val ${s.withoutRef > 0 ? 'amber' : 'gray'}">${s.withoutRef}</div>
+                <div class="kpi-sub">à rattacher</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Exigences couvertes</div>
+                <div class="kpi-val purple">${s.uniqueRefs}</div>
+                <div class="kpi-sub">références distinctes</div>
+            </div>
+        </div>
+
+        ${s.withoutRef > 0 ? `
+        <div class="comep-info">
+            <strong>${s.withoutRef} scénario(s)</strong> n'ont pas de référence exigence.
+            Saisissez-la directement dans le tableau ci-dessous (colonne "Référence") pour compléter la traçabilité COMEP.
+        </div>` : `
+        <div style="background:#d4edda;border:1px solid #c3e6cb;color:#155724;border-radius:8px;padding:12px 16px;font-size:0.85rem;margin-bottom:20px;">
+            Tous les scénarios sont référencés. Matrice de traçabilité complète.
+        </div>`}
+
+        <div class="toolbar">
+            <input class="search-input" type="text" placeholder="Rechercher une référence ou un scénario…"
+                value="${esc(state.search)}" oninput="setSearch(this.value)">
+            <button class="filter-btn ${state.filter==='ALL'  ?'active':''}" onclick="setFilter('ALL')">Tous</button>
+            <button class="filter-btn ${state.filter==='REF'  ?'active':''}" onclick="setFilter('REF')">Avec référence</button>
+            <button class="filter-btn ${state.filter==='NOREF'?'active':''}" onclick="setFilter('NOREF')">Sans référence</button>
+            <div class="toolbar-sep"></div>
+            <span style="font-size:0.82rem;color:var(--text-muted);">${filtered.length} groupe(s)</span>
+        </div>
+
+        ${filtered.length === 0
+            ? '<div class="empty"><div class="empty-icon">🔍</div><p>Aucun résultat pour ce filtre.</p></div>'
+            : renderMatrix(filtered)
+        }
+    `;
+}
+
+function renderMatrix(groups) {
+    const rows = groups.map((g, gi) => {
+        const isOpen = !!state.expanded[g.label];
+        const cc = coverageColor(g.coverage_pct);
+
+        const scRows = g.scenarios.map((sc, si) => `
+            <tr class="sc-row" id="sc-row-${esc(sc.id)}" ${!isOpen ? 'style="display:none"' : ''} data-group="${esc(g.label)}">
+                <td></td>
+                <td class="td-sc-id">${esc(sc.scenario_id)}</td>
+                <td class="td-sc-title">
+                    <div class="sc-name">${esc(sc.title)}</div>
+                    ${sc.feature_name ? `<div class="sc-feature">${esc(sc.feature_name)}</div>` : ''}
+                </td>
+                <td><span class="badge ${esc(sc.scenario_type)}">${esc(sc.scenario_type)}</span></td>
+                <td><span class="badge ${esc(sc.priority)}">${esc(sc.priority)}</span></td>
+                <td>
+                    <span class="badge ${sc.accepted ? 'accepted' : 'pending'}">${sc.accepted ? 'Accepté' : 'En attente'}</span>
+                    ${sc.is_tnr ? '<span class="badge tnr" style="margin-left:4px;">TNR</span>' : ''}
+                </td>
+                <td>
+                    <div class="ref-cell">
+                        <input class="ref-input" type="text"
+                            id="ref-${sc.id}"
+                            value="${esc(sc.source_reference || '')}"
+                            placeholder="US-001, SFD §3.2…"
+                            onkeydown="if(event.key==='Enter') saveRef(${sc.id})">
+                        <button class="btn-ref-save" onclick="saveRef(${sc.id})">✓</button>
+                    </div>
+                </td>
+            </tr>`).join('');
+
+        return `
+            <tr class="group-header" onclick="toggleGroup('${esc(g.label)}', ${gi})">
+                <td style="width:28px;"><span class="chevron ${isOpen?'open':''}" id="chev-${gi}">▶</span></td>
+                <td class="td-ref">
+                    ${g.reference
+                        ? `<span>${esc(g.label)}</span>`
+                        : `<span class="td-ref-none">Sans référence</span>`}
+                    <span class="count-pill">${g.total}</span>
+                </td>
+                <td colspan="3" style="color:var(--text-muted);font-size:0.82rem;font-weight:400;">
+                    ${g.byType ? Object.entries(g.byType).map(([t,n]) => `${n} ${t}`).join(' · ') : ''}
+                </td>
+                <td>
+                    <span class="badge ${g.accepted === g.total && g.total > 0 ? 'accepted' : 'pending'}">
+                        ${g.accepted}/${g.total} acceptés
+                    </span>
+                </td>
+                <td class="td-coverage">
+                    <div class="cov-bar-wrap">
+                        <div class="cov-bar"><div class="cov-bar-fill ${cc}" style="width:${g.coverage_pct}%"></div></div>
+                        <span class="cov-pct ${cc}">${g.coverage_pct}%</span>
+                    </div>
+                </td>
+            </tr>
+            ${scRows}`;
+    }).join('');
+
+    return `<div class="matrix-wrap">
+        <table class="matrix">
+            <thead>
+                <tr>
+                    <th style="width:28px;"></th>
+                    <th>Référence / Exigence</th>
+                    <th>Scénario</th>
+                    <th>Type</th>
+                    <th>Priorité</th>
+                    <th>Statut</th>
+                    <th>Référence (éditable)</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+function toggleGroup(label, gi) {
+    state.expanded[label] = !state.expanded[label];
+    const isOpen = state.expanded[label];
+    // Toggler les lignes
+    document.querySelectorAll(`[data-group="${label}"]`).forEach(row => {
+        row.style.display = isOpen ? '' : 'none';
+    });
+    const chev = document.getElementById(`chev-${gi}`);
+    if (chev) chev.classList.toggle('open', isOpen);
+}
+
+async function saveRef(scId) {
+    const input = document.getElementById(`ref-${scId}`);
+    if (!input) return;
+    const ref = input.value.trim() || null;
+    try {
+        await TestPilotAPI.Scenarios.setReference(scId, ref);
+        input.style.borderColor = 'var(--success)';
+        setTimeout(() => { input.style.borderColor = ''; }, 1200);
+        // Recharger pour mettre à jour la matrice
+        await loadData();
+    } catch (e) {
+        alert('Erreur : ' + e.message);
+    }
+}
+
+function setFilter(f) { state.filter = f; render(); }
+function setSearch(q) { state.search = q; render(); }
+
+function exportCSV() {
+    if (!state.matrix || state.matrix.length === 0) { alert('Aucune donnée à exporter.'); return; }
+
+    const lines = [
+        ['Référence/Exigence', 'ID Scénario', 'Titre', 'Feature', 'Type', 'Priorité', 'Statut', 'TNR', 'Couverture %'].join(';')
+    ];
+
+    state.matrix.forEach(g => {
+        g.scenarios.forEach(sc => {
+            lines.push([
+                `"${(g.label || '').replace(/"/g,'""')}"`,
+                `"${(sc.scenario_id || '').replace(/"/g,'""')}"`,
+                `"${(sc.title || '').replace(/"/g,'""')}"`,
+                `"${(sc.feature_name || '').replace(/"/g,'""')}"`,
+                sc.scenario_type,
+                sc.priority,
+                sc.accepted ? 'Accepté' : 'En attente',
+                sc.is_tnr ? 'Oui' : 'Non',
+                g.coverage_pct + '%'
+            ].join(';'));
+        });
+    });
+
+    const bom = '\uFEFF'; // BOM UTF-8 pour Excel
+    const blob = new Blob([bom + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `testpilot-tracabilite-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function renderEmpty(type) {
+    if (type === 'project') {
+        return `<div class="empty"><div class="empty-icon">📁</div><p style="font-weight:600;">Aucun projet sélectionné</p><p>Sélectionnez un projet pour voir sa matrice de traçabilité.</p></div>`;
+    }
+    return `<div class="empty">
+        <div class="empty-icon">🔗</div>
+        <p style="font-weight:600;">Aucun scénario trouvé</p>
+        <p>Génère des scénarios dans <a href="index.html">la vue Rédaction</a> pour voir la matrice de traçabilité.</p>
+    </div>`;
+}
+
+async function onProjectChange(projectId) {
+    state.projectId = projectId;
+    await loadData();
+}
+
+TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
+    const stored = TestPilotAPI.getCurrentProjectId();
+    if (stored && !state.projectId) {
+        state.projectId = stored;
+        loadData();
+    } else if (!state.projectId) {
+        document.getElementById('appContent').innerHTML = renderEmpty('project');
+    }
+});
+
+window.addEventListener('focus', () => { if (state.projectId) loadData(); });
+</script>
+</body>
+</html>

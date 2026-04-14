@@ -153,6 +153,15 @@
         .filter-btn.tnr { border-color: var(--blocked); color: var(--blocked); }
         .filter-btn.tnr.active { background: var(--blocked); color: white; }
 
+        /* Campaign name */
+        .campaign-name-row { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
+        .campaign-name-label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+        .campaign-name-input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; }
+        .campaign-name-input:focus { outline: none; border-color: var(--primary); }
+
+        /* Saved badge */
+        .saved-badge { font-size: 0.78rem; background: #d4edda; color: #155724; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+
         @media (max-width: 600px) {
             .actions-row { grid-template-columns: 1fr; }
             .results-grid { grid-template-columns: repeat(2,1fr); }
@@ -169,6 +178,8 @@
         <a class="nav-link" href="index.html">Rédaction</a>
         <a class="nav-link" href="dashboard.html">Dashboard</a>
         <a class="nav-link active" href="campagne.html">Campagne</a>
+        <a class="nav-link" href="historique.html">Historique</a>
+        <a class="nav-link" href="import.html">Import</a>
         <a class="nav-link" href="export.html">Export</a>
     </div>
 </nav>
@@ -189,7 +200,8 @@ let state = {
     scenarios: [],
     session: { results: [], started: null, finished: false },
     cursor: 0,
-    filterTNR: false
+    filterTNR: false,
+    campaignSavedId: null   // ID BDD si la campagne a été archivée
 };
 
 // Session storage key per project
@@ -317,6 +329,7 @@ function render() {
     const existing = state.session.results[state.cursor];
     const currentStatus = existing ? existing.status : null;
     const currentComment = existing ? (existing.comment || '') : '';
+    const campaignName = state.session.name || '';
 
     app.innerHTML = `
         <div class="filter-row">
@@ -327,6 +340,14 @@ function render() {
                 TNR uniquement (${tnrCount})
             </button>
             <button class="btn-secondary" style="margin-left:auto;" onclick="resetSession()">Nouvelle campagne</button>
+        </div>
+
+        <div class="campaign-name-row">
+            <span class="campaign-name-label">Nom de la campagne :</span>
+            <input class="campaign-name-input" type="text" id="campaignNameInput"
+                value="${esc(campaignName)}"
+                placeholder="Ex : Sprint 24 — TNR ATHENA v3.2"
+                onchange="state.session.name = this.value; saveSession();">
         </div>
         
         <div class="progress-wrap">
@@ -452,6 +473,7 @@ function renderResults() {
             <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
                 <button class="btn-primary" onclick="exportResults()">Exporter les résultats JSON</button>
                 <button class="btn-secondary" onclick="resetSession()">Nouvelle campagne</button>
+                <a href="historique.html" style="text-decoration:none;"><button class="btn-secondary">Voir l'historique</button></a>
                 <a href="dashboard.html" style="text-decoration:none;"><button class="btn-secondary">Voir le dashboard</button></a>
             </div>
         </div>`;
@@ -518,8 +540,59 @@ function finishSession() {
         }
     }
     state.session.finished = true;
+    state.session.finishedAt = Date.now();
     saveSession();
+    archiveCampaign(); // Archivage BDD automatique
     renderResults();
+}
+
+async function archiveCampaign() {
+    if (!state.projectId) return;
+    const scenarios = getFilteredScenarios();
+    const results = state.session.results;
+
+    const pass    = results.filter(r => r.status === 'pass').length;
+    const fail    = results.filter(r => r.status === 'fail').length;
+    const blocked = results.filter(r => r.status === 'blocked').length;
+    const skipped = results.filter(r => r.status === 'skipped').length;
+
+    const started_at  = state.session.started  ? new Date(state.session.started).toISOString() : new Date().toISOString();
+    const finished_at = state.session.finishedAt ? new Date(state.session.finishedAt).toISOString() : new Date().toISOString();
+
+    const name = state.session.name ||
+        `Campagne ${state.filterTNR ? 'TNR' : ''} — ${new Date().toLocaleDateString('fr-FR')}`;
+
+    const detailedResults = scenarios.map((sc, i) => ({
+        id:      sc.id || ('SC-' + String(i+1).padStart(3,'0')),
+        title:   sc.title,
+        feature: sc.feature || null,
+        type:    sc.type,
+        is_tnr:  sc.is_tnr,
+        status:  results[i]?.status || 'skipped',
+        comment: results[i]?.comment || ''
+    }));
+
+    try {
+        const saved = await TestPilotAPI.Campaigns.save(state.projectId, {
+            name,
+            type:        state.filterTNR ? 'TNR' : 'ALL',
+            started_at,
+            finished_at,
+            total:   scenarios.length,
+            pass, fail, blocked, skipped,
+            results: detailedResults
+        });
+        state.campaignSavedId = saved.id;
+        // Affiche badge "Archivée"
+        const badge = document.createElement('span');
+        badge.className = 'saved-badge';
+        badge.textContent = 'Archivée dans l\'historique ✓';
+        badge.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:999;padding:8px 16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);';
+        document.body.appendChild(badge);
+        setTimeout(() => badge.remove(), 3500);
+    } catch (e) {
+        console.warn('Archivage campagne échoué:', e.message);
+    }
 }
 
 function resetSession() {

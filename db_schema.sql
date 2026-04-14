@@ -104,6 +104,28 @@ CREATE INDEX IF NOT EXISTS idx_test_results_session ON test_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_test_results_scenario ON test_results(scenario_id);
 CREATE INDEX IF NOT EXISTS idx_test_results_status ON test_results(status);
 
+-- ── P1.2 : Historique des campagnes ──────────────────────────────────────────
+-- Campagnes de test archivées (remplace/complète le localStorage)
+CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    name TEXT,                            -- Ex: "Sprint 24 - TNR ATHENA"
+    type TEXT DEFAULT 'ALL',              -- 'ALL' ou 'TNR'
+    started_at DATETIME,
+    finished_at DATETIME,
+    total INTEGER DEFAULT 0,
+    pass INTEGER DEFAULT 0,
+    fail INTEGER DEFAULT 0,
+    blocked INTEGER DEFAULT 0,
+    skipped INTEGER DEFAULT 0,
+    results_json TEXT DEFAULT '[]',       -- Tableau JSON des résultats détaillés
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_campaigns_project ON campaigns(project_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_finished ON campaigns(finished_at);
+
 -- Insert default Carter-Cash projects
 INSERT OR IGNORE INTO projects (name, tech_stack, business_domain, description) VALUES
     ('ATHENA', '.NET 4.8 (C#)', 'Vente en magasin et workflows', 'ERP historique majeur, intégrant des processus critiques liés à la vente en magasin et aux workflows. Décommissionnement prévu en 2027.'),

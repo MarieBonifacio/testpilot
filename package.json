@@ -12,7 +12,13 @@
     "type": "git",
     "url": "git+https://github.com/MarieBonifacio/testpilot.git"
   },
-  "keywords": ["testing", "qa", "test-automation", "ai", "gherkin"],
+  "keywords": [
+    "testing",
+    "qa",
+    "test-automation",
+    "ai",
+    "gherkin"
+  ],
   "author": "",
   "license": "ISC",
   "bugs": {
@@ -21,6 +27,7 @@
   "homepage": "https://github.com/MarieBonifacio/testpilot#readme",
   "dependencies": {
     "express": "^5.2.1",
-    "sqlite3": "^6.0.1"
+    "sqlite3": "^6.0.1",
+    "xlsx": "^0.18.5"
   }
 }

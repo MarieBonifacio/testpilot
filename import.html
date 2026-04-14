@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestPilot — Import Excel</title>
+    <link rel="stylesheet" href="styles-prompt-library.css">
+    <style>
+        :root {
+            --primary: #3B6D11;
+            --primary-dark: #2d5309;
+            --bg: #ffffff;
+            --bg-alt: #f8f9fa;
+            --text: #212529;
+            --text-muted: #6c757d;
+            --border: #dee2e6;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #e8a020;
+            --purple: #534AB7;
+            --purple-light: #EEEDFE;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-alt); color: var(--text); min-height: 100vh; }
+
+        /* Nav */
+        .nav { background: white; border-bottom: 2px solid var(--primary); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+        .nav-brand { color: var(--primary); font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; text-decoration: none; }
+        .nav-brand::before { content: '✈'; }
+        .nav-links { display: flex; gap: 4px; }
+        .nav-link { padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; text-decoration: none; color: var(--text-muted); transition: all .15s; }
+        .nav-link:hover { background: var(--bg-alt); color: var(--text); }
+        .nav-link.active { background: rgba(59,109,17,0.1); color: var(--primary); }
+
+        .container { max-width: 960px; margin: 0 auto; padding: 28px 20px; }
+
+        /* Page title */
+        .page-header { margin-bottom: 28px; }
+        .page-header h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; }
+        .page-header p { color: var(--text-muted); font-size: 0.9rem; }
+
+        /* Drop zone */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            background: white;
+            padding: 48px 32px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 24px;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--primary);
+            background: rgba(59,109,17,0.03);
+        }
+        .drop-zone.has-file {
+            border-color: var(--success);
+            background: #f0fff4;
+        }
+        .drop-icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .drop-title { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+        .drop-sub { font-size: 0.85rem; color: var(--text-muted); }
+        .drop-file-name { font-weight: 600; color: var(--success); margin-top: 8px; }
+        #fileInput { display: none; }
+
+        /* Options */
+        .options-panel { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin-bottom: 24px; }
+        .options-panel h3 { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); margin-bottom: 16px; }
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .option-group label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+        .option-group input, .option-group select { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; }
+        .option-group input:focus, .option-group select:focus { outline: none; border-color: var(--primary); }
+
+        .checkbox-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+        .checkbox-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
+        .checkbox-row label { font-size: 0.9rem; cursor: pointer; }
+
+        /* Buttons */
+        .btn-primary { padding: 10px 22px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-secondary { padding: 10px 18px; background: white; border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-success { padding: 10px 22px; background: var(--success); color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-success:hover:not(:disabled) { background: #218838; }
+        .btn-success:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-danger-outline { padding: 6px 14px; background: white; border: 1px solid var(--danger); color: var(--danger); border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-danger-outline:hover { background: #f8d7da; }
+
+        /* Action bar */
+        .action-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
+        .action-bar .sep { flex: 1; }
+
+        /* Loader */
+        .loader { display: none; align-items: center; gap: 10px; color: var(--text-muted); padding: 12px 0; }
+        .loader.active { display: flex; }
+        .spinner { width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Info banner */
+        .info-banner { background: #cce5ff; border: 1px solid #b8daff; color: #004085; border-radius: 8px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 20px; }
+        .warn-banner { background: #fff3cd; border: 1px solid #ffc107; color: #856404; border-radius: 8px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 20px; }
+        .success-banner { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; border-radius: 8px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 20px; }
+        .error-banner { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; border-radius: 8px; padding: 12px 16px; font-size: 0.85rem; margin-bottom: 20px; }
+
+        /* Column mapping */
+        .col-map { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin-bottom: 24px; }
+        .col-map h3 { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); margin-bottom: 14px; }
+        .col-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+        .col-chip { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.82rem; background: var(--bg-alt); }
+        .col-chip.detected { border-color: var(--success); background: #f0fff4; }
+        .col-chip.missing  { border-color: var(--warning); background: #fffbee; color: #856404; }
+        .col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .col-dot.ok { background: var(--success); }
+        .col-dot.warn { background: var(--warning); }
+        .col-label { font-weight: 600; min-width: 70px; }
+        .col-value { color: var(--text-muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* Preview table */
+        .preview-section { margin-bottom: 24px; }
+        .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+        .preview-header h3 { font-size: 0.95rem; font-weight: 700; }
+        .preview-count { font-size: 0.85rem; color: var(--text-muted); }
+
+        .sc-list { display: flex; flex-direction: column; gap: 12px; }
+        .sc-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+        .sc-card.needs-ai { border-left: 4px solid var(--warning); }
+        .sc-card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 12px; }
+        .sc-card-title-row { flex: 1; }
+        .sc-id { font-family: monospace; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px; }
+        .sc-title-input { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem; font-weight: 600; font-family: inherit; }
+        .sc-title-input:focus { outline: none; border-color: var(--primary); }
+        .sc-badges { display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
+        .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; font-weight: 600; text-transform: uppercase; }
+        .badge.functional { background: #d4edda; color: #155724; }
+        .badge.negative   { background: #f8d7da; color: #721c24; }
+        .badge.edge-case  { background: #d1ecf1; color: #0c5460; }
+        .badge.boundary   { background: var(--purple-light); color: var(--purple); }
+        .badge.high   { background: #f8d7da; color: #721c24; }
+        .badge.medium { background: #fff3cd; color: #856404; }
+        .badge.low    { background: #d4edda; color: #155724; }
+        .badge.ai     { background: #e2d9f3; color: #432874; }
+
+        .gwt { display: grid; gap: 8px; margin-bottom: 12px; }
+        .gwt-row { border-left: 3px solid var(--border); padding: 6px 12px; }
+        .gwt-row.given { border-color: #17a2b8; }
+        .gwt-row.when  { border-color: var(--warning); }
+        .gwt-row.then  { border-color: var(--primary); }
+        .gwt-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 2px; }
+        .gwt-input { width: 100%; padding: 5px 8px; border: 1px solid transparent; border-radius: 4px; font-size: 0.88rem; font-family: inherit; background: transparent; resize: none; min-height: 44px; line-height: 1.4; }
+        .gwt-input:focus { outline: none; border-color: var(--border); background: white; }
+
+        .sc-foot { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .sc-foot select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.82rem; font-family: inherit; }
+        .sc-foot input[type=text] { padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 0.82rem; font-family: inherit; flex: 1; min-width: 120px; }
+        .sc-foot-label { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
+        .sc-remove { margin-left: auto; }
+
+        .needs-ai-label { font-size: 0.75rem; color: #856404; background: #fff3cd; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+
+        /* Import summary */
+        .summary-panel { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+        .sum-metric { padding: 14px; border-radius: 8px; background: var(--bg-alt); text-align: center; }
+        .sum-val { font-size: 1.8rem; font-weight: 700; line-height: 1; }
+        .sum-label { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+
+        /* Normalize button */
+        .btn-ai { padding: 10px 22px; background: #6f42c1; color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: .15s; display: flex; align-items: center; gap: 8px; }
+        .btn-ai:hover:not(:disabled) { background: #5a32a3; }
+        .btn-ai:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        @media (max-width: 700px) {
+            .options-grid { grid-template-columns: 1fr; }
+            .summary-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<nav class="nav">
+    <a class="nav-brand" href="index.html">TestPilot</a>
+    <div id="projectSelectorContainer"></div>
+    <div class="nav-links">
+        <a class="nav-link" href="index.html">Rédaction</a>
+        <a class="nav-link" href="dashboard.html">Dashboard</a>
+        <a class="nav-link" href="campagne.html">Campagne</a>
+        <a class="nav-link active" href="import.html">Import</a>
+        <a class="nav-link" href="historique.html">Historique</a>
+        <a class="nav-link" href="export.html">Export</a>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <h2>Import de cahier de tests Excel</h2>
+        <p>Importez un fichier .xlsx existant. Les cas de tests sont détectés automatiquement et normalisés en format Given/When/Then.</p>
+    </div>
+
+    <div id="noProjectBanner" class="warn-banner" style="display:none;">
+        Sélectionnez un projet dans la barre de navigation pour importer des scénarios.
+    </div>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="drop-icon" id="dropIcon">📊</div>
+        <div class="drop-title" id="dropTitle">Glisser-déposer votre fichier Excel ici</div>
+        <div class="drop-sub" id="dropSub">ou cliquez pour sélectionner — formats acceptés : .xlsx, .xls</div>
+        <div class="drop-file-name" id="dropFileName"></div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="onFileSelected(this.files[0])">
+    </div>
+
+    <!-- Options -->
+    <div class="options-panel" id="optionsPanel" style="display:none;">
+        <h3>Options d'import</h3>
+        <div class="options-grid">
+            <div class="option-group">
+                <label>Priorité par défaut (si non détectée)</label>
+                <select id="defaultPriority">
+                    <option value="medium">Moyenne</option>
+                    <option value="high">Haute</option>
+                    <option value="low">Basse</option>
+                </select>
+            </div>
+            <div class="option-group">
+                <label>Feature par défaut (si non détectée)</label>
+                <input type="text" id="defaultFeature" placeholder="Ex: Module Import, Sprint 24…">
+            </div>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="chkNormalizeAI" checked>
+            <label for="chkNormalizeAI">Normaliser les cas sans GWT via l'IA (nécessite une clé API configurée)</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="chkMarkTNR">
+            <label for="chkMarkTNR">Marquer tous les scénarios importés comme TNR</label>
+        </div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="chkAutoAccept">
+            <label for="chkAutoAccept">Accepter automatiquement les scénarios importés</label>
+        </div>
+    </div>
+
+    <div id="mainContent"></div>
+</div>
+
+<script src="api-client.js"></script>
+<script>
+"use strict";
+
+function esc(t) { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
+
+let state = {
+    projectId: null,
+    file: null,
+    parsed: null,   // réponse du serveur
+    scenarios: [],  // scénarios éditables
+    importing: false
+};
+
+// ── File handling ─────────────────────────────────────
+function onFileSelected(file) {
+    if (!file) return;
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+        showError("Format non supporté. Veuillez sélectionner un fichier .xlsx ou .xls");
+        return;
+    }
+    state.file = file;
+    const dz = document.getElementById('dropZone');
+    dz.classList.add('has-file');
+    document.getElementById('dropIcon').textContent = '✅';
+    document.getElementById('dropTitle').textContent = 'Fichier sélectionné';
+    document.getElementById('dropSub').textContent = file.name + ' — ' + (file.size / 1024).toFixed(1) + ' Ko';
+    document.getElementById('optionsPanel').style.display = 'block';
+    parseFile();
+}
+
+// Drag & drop
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) onFileSelected(file);
+});
+
+// ── Parse ─────────────────────────────────────────────
+async function parseFile() {
+    if (!state.file || !state.projectId) return;
+    showLoader('Analyse du fichier Excel…');
+
+    try {
+        const result = await TestPilotAPI.Import.parseExcel(state.projectId, state.file);
+        state.parsed = result;
+        state.scenarios = result.scenarios.map(s => ({ ...s }));
+        hideLoader();
+        renderPreview();
+    } catch (e) {
+        hideLoader();
+        showError('Erreur lors de l\'analyse : ' + e.message);
+    }
+}
+
+// ── AI Normalization ──────────────────────────────────
+async function normalizeWithAI() {
+    const needsAI = state.scenarios.filter(s => s.needs_ai);
+    if (needsAI.length === 0) {
+        alert('Tous les scénarios ont déjà un format GWT complet.');
+        return;
+    }
+
+    const apiKey = document.querySelector('input[type=password]')?.value || null;
+    showLoader(`Normalisation IA en cours pour ${needsAI.length} scénario(s)…`);
+
+    for (let i = 0; i < needsAI.length; i++) {
+        const sc = needsAI[i];
+        updateLoaderText(`Normalisation IA : ${i+1}/${needsAI.length} — ${sc.title}`);
+
+        const prompt = `Tu es un expert QA. Convertis ce cas de test en format Gherkin Given/When/Then.
+Cas de test : "${sc.title}"
+${sc.when_text !== sc.title ? 'Description : "' + sc.when_text + '"' : ''}
+Retourne un JSON strict : {"given":"...","when":"...","then":"..."}
+Contexte : application métier Carter-Cash (ERP retail auto-moto).
+Réponse en français. Sois concis (1-2 phrases par étape).`;
+
+        try {
+            const body = {
+                model: "claude-opus-4-5",
+                max_tokens: 300,
+                messages: [{ role: "user", content: prompt }]
+            };
+            const headers = { "Content-Type": "application/json", "anthropic-version": "2023-06-01" };
+            if (apiKey) headers["x-api-key"] = apiKey;
+
+            const resp = await fetch('/api/messages', { method: 'POST', headers, body: JSON.stringify(body) });
+            if (resp.ok) {
+                const data = await resp.json();
+                const text = data.content?.[0]?.text || '';
+                const match = text.match(/\{[\s\S]*"given"[\s\S]*"when"[\s\S]*"then"[\s\S]*\}/);
+                if (match) {
+                    const gwt = JSON.parse(match[0]);
+                    const idx = state.scenarios.findIndex(s => s.scenario_id === sc.scenario_id);
+                    if (idx !== -1) {
+                        state.scenarios[idx].given_text = gwt.given || sc.given_text;
+                        state.scenarios[idx].when_text  = gwt.when  || sc.when_text;
+                        state.scenarios[idx].then_text  = gwt.then  || sc.then_text;
+                        state.scenarios[idx].needs_ai   = false;
+                        // Mettre à jour le DOM directement
+                        const givenEl = document.getElementById(`given-${sc.scenario_id}`);
+                        const whenEl  = document.getElementById(`when-${sc.scenario_id}`);
+                        const thenEl  = document.getElementById(`then-${sc.scenario_id}`);
+                        if (givenEl) givenEl.value = state.scenarios[idx].given_text;
+                        if (whenEl)  whenEl.value  = state.scenarios[idx].when_text;
+                        if (thenEl)  thenEl.value  = state.scenarios[idx].then_text;
+                        // Retirer le style orange
+                        const card = document.getElementById(`card-${sc.scenario_id}`);
+                        if (card) { card.classList.remove('needs-ai'); card.querySelector('.needs-ai-label')?.remove(); }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('IA error for', sc.scenario_id, e.message);
+        }
+
+        // Petite pause pour ne pas saturer l'API
+        if (i < needsAI.length - 1) await new Promise(r => setTimeout(r, 400));
+    }
+
+    hideLoader();
+    renderPreview(); // re-render pour actualiser les compteurs
+}
+
+// ── Render ────────────────────────────────────────────
+function renderPreview() {
+    const main = document.getElementById('mainContent');
+    if (!state.parsed) { main.innerHTML = ''; return; }
+
+    const { columns_detected } = state.parsed;
+    const needsAICount = state.scenarios.filter(s => s.needs_ai).length;
+
+    // Détection colonnes
+    const colItems = [
+        { label: 'Titre',    col: columns_detected.colTitle },
+        { label: 'Given',    col: columns_detected.colGiven },
+        { label: 'When',     col: columns_detected.colWhen },
+        { label: 'Then',     col: columns_detected.colThen },
+        { label: 'Priorité', col: columns_detected.colPriority },
+        { label: 'Feature',  col: columns_detected.colFeature },
+        { label: 'Référence',col: columns_detected.colRef },
+    ];
+
+    const colChips = colItems.map(ci => `
+        <div class="col-chip ${ci.col ? 'detected' : 'missing'}">
+            <div class="col-dot ${ci.col ? 'ok' : 'warn'}"></div>
+            <span class="col-label">${ci.label}</span>
+            <span class="col-value">${ci.col ? esc(ci.col) : 'non détecté'}</span>
+        </div>
+    `).join('');
+
+    const scCards = state.scenarios.map((sc, i) => renderScCard(sc, i)).join('');
+
+    main.innerHTML = `
+        ${needsAICount > 0 ? `
+        <div class="warn-banner">
+            <strong>${needsAICount} scénario(s)</strong> sans format GWT complet ont été détectés.
+            Utilisez "Normaliser via IA" pour les compléter automatiquement, ou éditez-les manuellement ci-dessous.
+        </div>` : `
+        <div class="success-banner">
+            Tous les scénarios ont un format GWT complet — prêts à importer.
+        </div>`}
+
+        <div class="col-map">
+            <h3>Colonnes détectées — feuille "${esc(state.parsed.sheet_name)}"</h3>
+            <div class="col-map-grid">${colChips}</div>
+        </div>
+
+        <div class="action-bar">
+            <span style="font-size:0.9rem;color:var(--text-muted);">
+                <strong>${state.scenarios.length}</strong> scénario(s) — Onglet : ${esc(state.parsed.sheet_name)} — ${state.parsed.total_rows} ligne(s) lues
+            </span>
+            <div class="sep"></div>
+            ${needsAICount > 0 ? `<button class="btn-ai" onclick="normalizeWithAI()">✦ Normaliser via IA (${needsAICount})</button>` : ''}
+            <button class="btn-success" onclick="importAll()" id="btnImport">
+                Importer ${state.scenarios.length} scénario(s) dans le projet
+            </button>
+        </div>
+
+        <div id="loaderInline" class="loader"><div class="spinner"></div><span id="loaderText">Chargement…</span></div>
+        <div id="errorBanner" class="error-banner" style="display:none;"></div>
+        <div id="successBanner" class="success-banner" style="display:none;"></div>
+
+        <div class="preview-section">
+            <div class="preview-header">
+                <h3>Prévisualisation &amp; édition</h3>
+                <span class="preview-count">Cliquez sur les champs pour les modifier avant l'import</span>
+            </div>
+            <div class="sc-list" id="scList">${scCards}</div>
+        </div>
+    `;
+}
+
+function renderScCard(sc, i) {
+    return `
+    <div class="sc-card ${sc.needs_ai ? 'needs-ai' : ''}" id="card-${esc(sc.scenario_id)}">
+        <div class="sc-card-head">
+            <div class="sc-card-title-row">
+                <div class="sc-id">${esc(sc.scenario_id)} ${sc.needs_ai ? '<span class="needs-ai-label">GWT incomplet</span>' : ''}</div>
+                <input class="sc-title-input" type="text" value="${esc(sc.title)}"
+                    onchange="updateScenario('${esc(sc.scenario_id)}', 'title', this.value)">
+            </div>
+            <div class="sc-badges">
+                <span class="badge ${esc(sc.scenario_type)}">${esc(sc.scenario_type)}</span>
+                <span class="badge ${esc(sc.priority)}">${esc(sc.priority)}</span>
+                ${sc.needs_ai ? '<span class="badge ai">IA requise</span>' : ''}
+            </div>
+        </div>
+        <div class="gwt">
+            <div class="gwt-row given">
+                <div class="gwt-label">Given</div>
+                <textarea class="gwt-input" id="given-${esc(sc.scenario_id)}"
+                    onchange="updateScenario('${esc(sc.scenario_id)}', 'given_text', this.value)"
+                    rows="2">${esc(sc.given_text)}</textarea>
+            </div>
+            <div class="gwt-row when">
+                <div class="gwt-label">When</div>
+                <textarea class="gwt-input" id="when-${esc(sc.scenario_id)}"
+                    onchange="updateScenario('${esc(sc.scenario_id)}', 'when_text', this.value)"
+                    rows="2">${esc(sc.when_text)}</textarea>
+            </div>
+            <div class="gwt-row then">
+                <div class="gwt-label">Then</div>
+                <textarea class="gwt-input" id="then-${esc(sc.scenario_id)}"
+                    onchange="updateScenario('${esc(sc.scenario_id)}', 'then_text', this.value)"
+                    rows="2">${esc(sc.then_text)}</textarea>
+            </div>
+        </div>
+        <div class="sc-foot">
+            <span class="sc-foot-label">Type :</span>
+            <select onchange="updateScenario('${esc(sc.scenario_id)}', 'scenario_type', this.value)">
+                <option value="functional" ${sc.scenario_type==='functional'?'selected':''}>Fonctionnel</option>
+                <option value="negative"   ${sc.scenario_type==='negative'?'selected':''}>Négatif</option>
+                <option value="edge-case"  ${sc.scenario_type==='edge-case'?'selected':''}>Cas limite</option>
+                <option value="boundary"   ${sc.scenario_type==='boundary'?'selected':''}>Bornage</option>
+            </select>
+            <span class="sc-foot-label">Priorité :</span>
+            <select onchange="updateScenario('${esc(sc.scenario_id)}', 'priority', this.value)">
+                <option value="high"   ${sc.priority==='high'?'selected':''}>Haute</option>
+                <option value="medium" ${sc.priority==='medium'?'selected':''}>Moyenne</option>
+                <option value="low"    ${sc.priority==='low'?'selected':''}>Basse</option>
+            </select>
+            <span class="sc-foot-label">Feature :</span>
+            <input type="text" value="${esc(sc.feature_name||'')}" placeholder="Feature…"
+                onchange="updateScenario('${esc(sc.scenario_id)}', 'feature_name', this.value)">
+            <span class="sc-foot-label">Réf. :</span>
+            <input type="text" value="${esc(sc.source_reference||'')}" placeholder="US-001, SFD §3.2…"
+                onchange="updateScenario('${esc(sc.scenario_id)}', 'source_reference', this.value)">
+            <button class="btn-danger-outline sc-remove" onclick="removeScenario('${esc(sc.scenario_id)}')">Supprimer</button>
+        </div>
+    </div>`;
+}
+
+function updateScenario(id, field, value) {
+    const idx = state.scenarios.findIndex(s => s.scenario_id === id);
+    if (idx !== -1) state.scenarios[idx][field] = value;
+}
+
+function removeScenario(id) {
+    state.scenarios = state.scenarios.filter(s => s.scenario_id !== id);
+    const card = document.getElementById(`card-${id}`);
+    if (card) card.remove();
+    // Mettre à jour le bouton import
+    const btn = document.getElementById('btnImport');
+    if (btn) btn.textContent = `Importer ${state.scenarios.length} scénario(s) dans le projet`;
+}
+
+// ── Import ─────────────────────────────────────────────
+async function importAll() {
+    if (!state.projectId) { alert('Sélectionnez un projet'); return; }
+    if (state.scenarios.length === 0) { alert('Aucun scénario à importer'); return; }
+    if (state.importing) return;
+    state.importing = true;
+
+    const btn = document.getElementById('btnImport');
+    if (btn) { btn.disabled = true; btn.textContent = 'Import en cours…'; }
+
+    const defaultPriority = document.getElementById('defaultPriority')?.value || 'medium';
+    const defaultFeature  = document.getElementById('defaultFeature')?.value.trim() || null;
+    const markTNR         = document.getElementById('chkMarkTNR')?.checked || false;
+    const autoAccept      = document.getElementById('chkAutoAccept')?.checked || false;
+
+    const payload = state.scenarios.map(sc => ({
+        scenario_id:      sc.scenario_id,
+        title:            sc.title,
+        scenario_type:    sc.scenario_type || 'functional',
+        priority:         sc.priority || defaultPriority,
+        given_text:       sc.given_text || 'Le système est dans son état initial',
+        when_text:        sc.when_text || sc.title,
+        then_text:        sc.then_text || 'Le système se comporte correctement',
+        feature_name:     sc.feature_name || defaultFeature,
+        source_reference: sc.source_reference || null,
+        accepted:         autoAccept ? 1 : 0,
+        is_tnr:           markTNR ? 1 : 0
+    }));
+
+    try {
+        const inserted = await TestPilotAPI.Scenarios.create(state.projectId, payload);
+        const count = Array.isArray(inserted) ? inserted.length : payload.length;
+
+        const successEl = document.getElementById('successBanner');
+        if (successEl) {
+            successEl.style.display = 'block';
+            successEl.innerHTML = `<strong>${count} scénario(s)</strong> importés avec succès dans le projet ! 
+                <a href="index.html" style="color:#155724;font-weight:700;">Voir dans Rédaction →</a>`;
+        }
+        if (btn) { btn.textContent = `${count} importés ✓`; }
+        state.scenarios = [];
+    } catch (e) {
+        const errEl = document.getElementById('errorBanner');
+        if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Erreur : ' + e.message; }
+        if (btn) { btn.disabled = false; btn.textContent = `Importer ${state.scenarios.length} scénario(s) dans le projet`; }
+    }
+    state.importing = false;
+}
+
+// ── Helpers UI ─────────────────────────────────────────
+function showLoader(msg) {
+    document.getElementById('mainContent').innerHTML = `
+        <div class="loader active" style="justify-content:center;padding:40px;">
+            <div class="spinner"></div><span>${esc(msg)}</span>
+        </div>`;
+}
+function hideLoader() {}
+function updateLoaderText(msg) {
+    const el = document.getElementById('loaderText');
+    if (el) el.textContent = msg;
+}
+function showError(msg) {
+    document.getElementById('mainContent').innerHTML = `<div class="error-banner">${esc(msg)}</div>`;
+}
+
+// ── Project change ─────────────────────────────────────
+async function onProjectChange(projectId) {
+    state.projectId = projectId;
+    document.getElementById('noProjectBanner').style.display = 'none';
+    if (state.file) parseFile(); // Re-parser si un fichier est déjà chargé
+}
+
+// ── Init ───────────────────────────────────────────────
+TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
+    const stored = TestPilotAPI.getCurrentProjectId();
+    if (stored && !state.projectId) {
+        state.projectId = stored;
+    } else if (!state.projectId) {
+        document.getElementById('noProjectBanner').style.display = 'block';
+    }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestPilot — Historique</title>
+    <link rel="stylesheet" href="styles-prompt-library.css">
+    <style>
+        :root {
+            --primary: #3B6D11;
+            --primary-dark: #2d5309;
+            --bg: #ffffff;
+            --bg-alt: #f8f9fa;
+            --text: #212529;
+            --text-muted: #6c757d;
+            --border: #dee2e6;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #e8a020;
+            --purple: #534AB7;
+            --purple-light: #EEEDFE;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-alt); color: var(--text); min-height: 100vh; }
+
+        .nav { background: white; border-bottom: 2px solid var(--primary); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+        .nav-brand { color: var(--primary); font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; text-decoration: none; }
+        .nav-brand::before { content: '✈'; }
+        .nav-links { display: flex; gap: 4px; }
+        .nav-link { padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; text-decoration: none; color: var(--text-muted); transition: all .15s; }
+        .nav-link:hover { background: var(--bg-alt); color: var(--text); }
+        .nav-link.active { background: rgba(59,109,17,0.1); color: var(--primary); }
+
+        .container { max-width: 1000px; margin: 0 auto; padding: 28px 20px; }
+
+        .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
+        .page-header h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
+        .page-header p { color: var(--text-muted); font-size: 0.9rem; }
+
+        /* KPI cards */
+        .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 28px; }
+        .kpi-card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+        .kpi-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); margin-bottom: 8px; }
+        .kpi-val { font-size: 1.9rem; font-weight: 700; line-height: 1; }
+        .kpi-val.green  { color: var(--success); }
+        .kpi-val.red    { color: var(--danger); }
+        .kpi-val.amber  { color: var(--warning); }
+        .kpi-val.purple { color: var(--purple); }
+        .kpi-val.gray   { color: var(--text-muted); }
+        .kpi-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 5px; }
+        .trend-up   { color: var(--success); font-size: 0.82rem; font-weight: 700; }
+        .trend-down { color: var(--danger);  font-size: 0.82rem; font-weight: 700; }
+        .trend-flat { color: var(--text-muted); font-size: 0.82rem; }
+
+        /* Trend chart */
+        .trend-panel { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin-bottom: 28px; }
+        .trend-panel h3 { font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); margin-bottom: 16px; }
+        .chart-wrap { position: relative; height: 140px; }
+        canvas#trendChart { width: 100%; height: 140px; }
+        .no-chart { text-align: center; color: var(--text-muted); padding: 40px 0; font-size: 0.9rem; }
+
+        /* Filter bar */
+        .filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .filter-btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: .15s; }
+        .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .filter-btn.tnr { border-color: var(--purple); color: var(--purple); }
+        .filter-btn.tnr.active { background: var(--purple); color: white; }
+        .filter-sep { flex: 1; }
+        .refresh-btn { font-size: 0.85rem; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; color: var(--text-muted); cursor: pointer; font-family: inherit; transition: .15s; }
+        .refresh-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* Table */
+        .table-wrap { background: white; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; }
+        thead tr { background: var(--bg-alt); border-bottom: 2px solid var(--border); }
+        th { padding: 11px 16px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); text-align: left; white-space: nowrap; }
+        td { padding: 12px 16px; font-size: 0.88rem; border-bottom: 1px solid var(--bg-alt); vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #fafafa; }
+
+        .td-name { font-weight: 600; max-width: 200px; }
+        .td-name small { display: block; font-weight: 400; color: var(--text-muted); font-size: 0.78rem; margin-top: 2px; }
+
+        .badge-type { font-size: 0.68rem; padding: 2px 8px; border-radius: 20px; font-weight: 700; text-transform: uppercase; }
+        .badge-type.ALL { background: #d4edda; color: #155724; }
+        .badge-type.TNR { background: var(--purple-light); color: var(--purple); }
+
+        .rate-bar-wrap { display: flex; align-items: center; gap: 8px; }
+        .rate-bar { width: 80px; height: 6px; background: var(--bg-alt); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+        .rate-bar-fill { height: 100%; border-radius: 3px; }
+        .rate-bar-fill.green  { background: var(--success); }
+        .rate-bar-fill.red    { background: var(--danger); }
+        .rate-bar-fill.amber  { background: var(--warning); }
+        .rate-pct { font-size: 0.88rem; font-weight: 700; min-width: 40px; }
+        .rate-pct.green  { color: var(--success); }
+        .rate-pct.red    { color: var(--danger); }
+        .rate-pct.amber  { color: var(--warning); }
+
+        .stat-cell { font-size: 0.88rem; }
+        .stat-cell .pass-val { color: var(--success); font-weight: 600; }
+        .stat-cell .fail-val { color: var(--danger); font-weight: 600; }
+        .stat-cell .blk-val  { color: var(--purple); font-weight: 600; }
+
+        .dur-cell { font-size: 0.82rem; color: var(--text-muted); white-space: nowrap; }
+
+        .btn-detail { padding: 4px 12px; border: 1px solid var(--border); border-radius: 5px; background: white; font-size: 0.8rem; cursor: pointer; font-family: inherit; transition: .15s; color: var(--text-muted); }
+        .btn-detail:hover { border-color: var(--primary); color: var(--primary); }
+        .btn-del { padding: 4px 10px; border: 1px solid var(--danger); border-radius: 5px; background: white; font-size: 0.8rem; cursor: pointer; font-family: inherit; transition: .15s; color: var(--danger); }
+        .btn-del:hover { background: #f8d7da; }
+
+        /* Detail modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .modal-box { background: white; border-radius: 12px; padding: 28px; width: 100%; max-width: 620px; max-height: 80vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .modal-box h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; }
+        .modal-close { float: right; cursor: pointer; font-size: 1.2rem; color: var(--text-muted); background: none; border: none; font-family: inherit; }
+        .modal-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+        .mk { padding: 12px; border-radius: 8px; text-align: center; }
+        .mk-val { font-size: 1.4rem; font-weight: 700; }
+        .mk-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 3px; }
+        .result-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--bg-alt); }
+        .result-row:last-child { border-bottom: none; }
+        .res-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .res-dot.pass    { background: var(--success); }
+        .res-dot.fail    { background: var(--danger); }
+        .res-dot.blocked { background: var(--purple); }
+        .res-dot.skipped { background: var(--text-muted); }
+        .res-info { flex: 1; }
+        .res-title { font-size: 0.88rem; font-weight: 500; }
+        .res-comment { font-size: 0.78rem; color: var(--text-muted); font-style: italic; }
+        .res-status-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 20px; flex-shrink: 0; }
+        .res-status-label.pass    { background: #d4edda; color: #155724; }
+        .res-status-label.fail    { background: #f8d7da; color: #721c24; }
+        .res-status-label.blocked { background: var(--purple-light); color: var(--purple); }
+        .res-status-label.skipped { background: var(--bg-alt); color: var(--text-muted); }
+
+        /* Empty */
+        .empty { text-align: center; padding: 60px 20px; color: var(--text-muted); background: white; border: 1px solid var(--border); border-radius: 10px; }
+        .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .empty a { color: var(--primary); text-decoration: none; font-weight: 600; }
+
+        @media (max-width: 900px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 600px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<nav class="nav">
+    <a class="nav-brand" href="index.html">TestPilot</a>
+    <div id="projectSelectorContainer"></div>
+    <div class="nav-links">
+        <a class="nav-link" href="index.html">Rédaction</a>
+        <a class="nav-link" href="dashboard.html">Dashboard</a>
+        <a class="nav-link" href="campagne.html">Campagne</a>
+        <a class="nav-link active" href="historique.html">Historique</a>
+        <a class="nav-link" href="import.html">Import</a>
+        <a class="nav-link" href="export.html">Export</a>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="page-header">
+        <div>
+            <h2>Historique des campagnes</h2>
+            <p>KPIs, tendances et taux de fuite par campagne de test.</p>
+        </div>
+        <button class="refresh-btn" onclick="loadData()">↻ Actualiser</button>
+    </div>
+
+    <div id="appContent"></div>
+</div>
+
+<script src="api-client.js"></script>
+<script>
+"use strict";
+
+function esc(t) { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
+
+function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+function fmtDur(sec) {
+    if (!sec || sec <= 0) return '—';
+    if (sec < 60) return sec + 's';
+    if (sec < 3600) return Math.floor(sec/60) + 'min ' + (sec%60) + 's';
+    return Math.floor(sec/3600) + 'h ' + Math.floor((sec%3600)/60) + 'min';
+}
+
+function rateColor(pct) {
+    return pct >= 70 ? 'green' : pct >= 40 ? 'amber' : 'red';
+}
+
+let state = { projectId: null, campaigns: [], kpis: null, filter: 'ALL' };
+
+async function loadData() {
+    if (!state.projectId) {
+        document.getElementById('appContent').innerHTML = renderEmpty('project');
+        return;
+    }
+    try {
+        const data = await TestPilotAPI.Campaigns.kpis(state.projectId);
+        state.campaigns = data.campaigns || [];
+        state.kpis = data.aggregates || null;
+        render();
+    } catch (e) {
+        document.getElementById('appContent').innerHTML = `<div class="empty"><p>Erreur : ${esc(e.message)}</p></div>`;
+    }
+}
+
+function getFiltered() {
+    return state.filter === 'ALL'
+        ? state.campaigns
+        : state.campaigns.filter(c => c.type === state.filter);
+}
+
+function render() {
+    const app = document.getElementById('appContent');
+    const filtered = getFiltered().slice().reverse(); // plus récent en premier
+
+    if (state.campaigns.length === 0) {
+        app.innerHTML = renderEmpty('no-campaigns');
+        return;
+    }
+
+    app.innerHTML = `
+        ${renderKPIs()}
+        ${renderChart()}
+        ${renderFilterBar(filtered)}
+        ${filtered.length === 0
+            ? '<div class="empty"><div class="empty-icon">🔍</div><p>Aucune campagne pour ce filtre.</p></div>'
+            : renderTable(filtered)
+        }
+    `;
+    drawChart();
+}
+
+function renderKPIs() {
+    const k = state.kpis;
+    if (!k) return '';
+    const trend = k.trend_vs_previous;
+    const trendHtml = trend === null ? '' :
+        trend > 0 ? `<span class="trend-up">▲ +${trend}%</span>` :
+        trend < 0 ? `<span class="trend-down">▼ ${trend}%</span>` :
+        `<span class="trend-flat">→ stable</span>`;
+
+    const allTNR  = state.campaigns.filter(c => c.type === 'TNR');
+    const avgTNRDur = allTNR.length > 0
+        ? Math.round(allTNR.filter(c => c.duration_sec > 0).reduce((s,c) => s + c.duration_sec, 0) / (allTNR.filter(c => c.duration_sec > 0).length || 1))
+        : 0;
+
+    return `<div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-label">Campagnes</div>
+            <div class="kpi-val gray">${k.total_campaigns}</div>
+            <div class="kpi-sub">au total</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Taux de succès moyen</div>
+            <div class="kpi-val ${rateColor(k.avg_success_rate)}">${k.avg_success_rate}%</div>
+            <div class="kpi-sub">${trendHtml || 'vs précédente'}</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Taux de fuite moyen</div>
+            <div class="kpi-val ${k.avg_leak_rate > 20 ? 'red' : k.avg_leak_rate > 10 ? 'amber' : 'green'}">${k.avg_leak_rate}%</div>
+            <div class="kpi-sub">FAIL + BLOQUÉ / total</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Durée moy. (toutes)</div>
+            <div class="kpi-val amber">${fmtDur(k.avg_duration_sec)}</div>
+            <div class="kpi-sub">par campagne</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Durée moy. TNR</div>
+            <div class="kpi-val purple">${allTNR.length > 0 ? fmtDur(avgTNRDur) : '—'}</div>
+            <div class="kpi-sub">${allTNR.length} campagne(s) TNR</div>
+        </div>
+    </div>`;
+}
+
+function renderChart() {
+    const allAsc = state.campaigns.slice(); // déjà ASC depuis le serveur
+    if (allAsc.length < 2) return '<div class="trend-panel"><h3>Tendance du taux de succès</h3><div class="no-chart">Minimum 2 campagnes pour afficher la courbe de tendance.</div></div>';
+    return `<div class="trend-panel">
+        <h3>Tendance du taux de succès (${allAsc.length} campagnes)</h3>
+        <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+    </div>`;
+}
+
+function drawChart() {
+    const canvas = document.getElementById('trendChart');
+    if (!canvas) return;
+
+    const allAsc = state.campaigns.slice();
+    const rates = allAsc.map(c => c.success_rate || 0);
+    const labels = allAsc.map(c => {
+        if (!c.finished_at) return '';
+        const d = new Date(c.finished_at);
+        return d.getDate() + '/' + (d.getMonth()+1);
+    });
+
+    const W = canvas.clientWidth || 800;
+    const H = 140;
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    const PAD = { top: 12, right: 16, bottom: 28, left: 36 };
+    const w = W - PAD.left - PAD.right;
+    const h = H - PAD.top - PAD.bottom;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Grille
+    ctx.strokeStyle = '#dee2e6';
+    ctx.lineWidth = 1;
+    [0, 25, 50, 75, 100].forEach(v => {
+        const y = PAD.top + h - (v / 100 * h);
+        ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(PAD.left + w, y); ctx.stroke();
+        ctx.fillStyle = '#6c757d'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+        ctx.fillText(v + '%', PAD.left - 4, y + 4);
+    });
+
+    if (rates.length < 2) return;
+
+    const xStep = w / (rates.length - 1);
+    const pts = rates.map((r, i) => ({ x: PAD.left + i * xStep, y: PAD.top + h - (r / 100 * h) }));
+
+    // Zone remplie
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, PAD.top + h);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length-1].x, PAD.top + h);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(59,109,17,0.08)';
+    ctx.fill();
+
+    // Ligne
+    ctx.beginPath();
+    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = '#3B6D11';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Points + labels
+    ctx.textAlign = 'center';
+    pts.forEach((p, i) => {
+        const r = rates[i];
+        const color = r >= 70 ? '#28a745' : r >= 40 ? '#e8a020' : '#dc3545';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill();
+        ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke();
+        // Label date
+        ctx.fillStyle = '#6c757d'; ctx.font = '9px sans-serif';
+        ctx.fillText(labels[i] || '', p.x, PAD.top + h + 16);
+        // Valeur
+        ctx.fillStyle = '#212529'; ctx.font = 'bold 9px sans-serif';
+        ctx.fillText(r + '%', p.x, p.y - 7);
+    });
+}
+
+function renderFilterBar(filtered) {
+    const allCount = state.campaigns.length;
+    const tnrCount = state.campaigns.filter(c => c.type === 'TNR').length;
+    return `<div class="filter-bar">
+        <button class="filter-btn ${state.filter === 'ALL' ? 'active' : ''}" onclick="setFilter('ALL')">
+            Toutes (${allCount})
+        </button>
+        <button class="filter-btn tnr ${state.filter === 'TNR' ? 'active' : ''}" onclick="setFilter('TNR')">
+            TNR uniquement (${tnrCount})
+        </button>
+        <div class="filter-sep"></div>
+        <span style="font-size:0.82rem;color:var(--text-muted);">${filtered.length} campagne(s) affichée(s)</span>
+    </div>`;
+}
+
+function renderTable(campaigns) {
+    const rows = campaigns.map(c => {
+        const sc = rateColor(c.success_rate || 0);
+        const lc = c.leak_rate > 20 ? 'red' : c.leak_rate > 10 ? 'amber' : 'green';
+        return `<tr>
+            <td class="td-name">
+                ${esc(c.name || 'Campagne #' + c.id)}
+                <small>${fmtDate(c.finished_at)}</small>
+            </td>
+            <td><span class="badge-type ${esc(c.type)}">${esc(c.type)}</span></td>
+            <td class="stat-cell">
+                <span class="pass-val">${c.pass}</span> /
+                <span class="fail-val">${c.fail}</span> /
+                <span class="blk-val">${c.blocked}</span>
+                <span style="color:var(--text-muted);font-size:0.78rem;"> (${c.total} total)</span>
+            </td>
+            <td>
+                <div class="rate-bar-wrap">
+                    <div class="rate-bar"><div class="rate-bar-fill ${sc}" style="width:${c.success_rate||0}%"></div></div>
+                    <span class="rate-pct ${sc}">${c.success_rate||0}%</span>
+                </div>
+            </td>
+            <td>
+                <div class="rate-bar-wrap">
+                    <div class="rate-bar"><div class="rate-bar-fill ${lc}" style="width:${Math.min(c.leak_rate||0,100)}%"></div></div>
+                    <span class="rate-pct ${lc}">${c.leak_rate||0}%</span>
+                </div>
+            </td>
+            <td class="dur-cell">${fmtDur(c.duration_sec)}</td>
+            <td style="white-space:nowrap;">
+                <button class="btn-detail" onclick="showDetail(${c.id})">Détail</button>
+                <button class="btn-del" onclick="deleteCampaign(${c.id})" style="margin-left:6px;">✕</button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    return `<div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Campagne</th>
+                    <th>Type</th>
+                    <th>Pass / Fail / Bloqué</th>
+                    <th>Taux succès</th>
+                    <th>Taux de fuite</th>
+                    <th>Durée</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+function setFilter(f) {
+    state.filter = f;
+    render();
+}
+
+async function deleteCampaign(id) {
+    if (!confirm('Supprimer cette campagne de l\'historique ?')) return;
+    try {
+        await TestPilotAPI.Campaigns.delete(id);
+        await loadData();
+    } catch (e) {
+        alert('Erreur : ' + e.message);
+    }
+}
+
+async function showDetail(id) {
+    try {
+        const c = await TestPilotAPI.Campaigns.get(id);
+        const results = c.results || [];
+
+        const statusLabels = { pass: 'PASS', fail: 'FAIL', blocked: 'BLOQUÉ', skipped: 'PASSÉ' };
+
+        const resultRows = results.map(r => `
+            <div class="result-row">
+                <div class="res-dot ${r.status}"></div>
+                <div class="res-info">
+                    <div class="res-title">${esc(r.title || r.id || '—')}</div>
+                    ${r.comment ? `<div class="res-comment">${esc(r.comment)}</div>` : ''}
+                </div>
+                <span class="res-status-label ${r.status}">${statusLabels[r.status] || r.status}</span>
+            </div>`).join('');
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-box">
+                <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+                <h3>${esc(c.name || 'Campagne #' + c.id)}</h3>
+                <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:16px;">
+                    ${fmtDate(c.started_at)} → ${fmtDate(c.finished_at)} — ${fmtDur(c.duration_sec)}
+                    — Type : <strong>${esc(c.type)}</strong>
+                </p>
+                <div class="modal-kpis">
+                    <div class="mk" style="background:#d4edda;"><div class="mk-val" style="color:var(--success);">${c.pass}</div><div class="mk-label">Pass</div></div>
+                    <div class="mk" style="background:#f8d7da;"><div class="mk-val" style="color:var(--danger);">${c.fail}</div><div class="mk-label">Fail</div></div>
+                    <div class="mk" style="background:var(--purple-light);"><div class="mk-val" style="color:var(--purple);">${c.blocked}</div><div class="mk-label">Bloqué</div></div>
+                    <div class="mk" style="background:var(--bg-alt);"><div class="mk-val" style="color:var(--text-muted);">${c.skipped}</div><div class="mk-label">Passé</div></div>
+                </div>
+                ${results.length > 0 ? `<div style="max-height:340px;overflow-y:auto;">${resultRows}</div>` : '<p style="color:var(--text-muted);text-align:center;padding:20px;">Aucun résultat détaillé enregistré.</p>'}
+            </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    } catch (e) {
+        alert('Erreur : ' + e.message);
+    }
+}
+
+function renderEmpty(type) {
+    if (type === 'project') {
+        return `<div class="empty"><div class="empty-icon">📁</div><p style="font-weight:600;">Aucun projet sélectionné</p><p>Sélectionnez un projet pour voir l'historique de ses campagnes.</p></div>`;
+    }
+    return `<div class="empty">
+        <div class="empty-icon">📊</div>
+        <p style="font-weight:600;">Aucune campagne archivée</p>
+        <p>Terminez une campagne dans <a href="campagne.html">la vue Campagne</a> pour la voir apparaître ici.<br>Les campagnes sont archivées automatiquement à la fin.</p>
+    </div>`;
+}
+
+async function onProjectChange(projectId) {
+    state.projectId = projectId;
+    await loadData();
+}
+
+TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
+    const stored = TestPilotAPI.getCurrentProjectId();
+    if (stored && !state.projectId) {
+        state.projectId = stored;
+        loadData();
+    } else if (!state.projectId) {
+        document.getElementById('appContent').innerHTML = renderEmpty('project');
+    }
+});
+
+window.addEventListener('focus', () => { if (state.projectId) loadData(); });
+</script>
+</body>
+</html>

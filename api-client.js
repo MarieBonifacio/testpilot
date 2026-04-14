@@ -81,7 +81,9 @@ const TestPilotAPI = (function() {
     deleteAll: (projectId) => del(`/api/projects/${projectId}/scenarios`),
     toggleAccept: (id) => patch(`/api/scenarios/${id}/accept`),
     toggleTNR: (id) => patch(`/api/scenarios/${id}/tnr`),
-    acceptAll: (projectId) => post(`/api/projects/${projectId}/scenarios/accept-all`)
+    acceptAll: (projectId) => post(`/api/projects/${projectId}/scenarios/accept-all`),
+    setReference: (id, ref) => put(`/api/scenarios/${id}/reference`, { source_reference: ref }),
+    coverageMatrix: (projectId) => get(`/api/projects/${projectId}/coverage-matrix`)
   };
 
   // ══════════════════════════════════════════════════════
@@ -103,6 +105,49 @@ const TestPilotAPI = (function() {
     create: (projectId, data) => post(`/api/projects/${projectId}/sessions`, data),
     finish: (id) => put(`/api/sessions/${id}/finish`),
     addResult: (sessionId, data) => post(`/api/sessions/${sessionId}/results`, data)
+  };
+
+  // ══════════════════════════════════════════════════════
+  // ██  CAMPAIGNS API (P1.2)
+  // ══════════════════════════════════════════════════════
+
+  const Campaigns = {
+    list:   (projectId) => get(`/api/projects/${projectId}/campaigns`),
+    kpis:   (projectId) => get(`/api/projects/${projectId}/campaigns/kpis`),
+    get:    (id)        => get(`/api/campaigns/${id}`),
+    save:   (projectId, data) => post(`/api/projects/${projectId}/campaigns`, data),
+    delete: (id)        => del(`/api/campaigns/${id}`)
+  };
+
+  // ══════════════════════════════════════════════════════
+  // ██  IMPORT API (P1.1)
+  // ══════════════════════════════════════════════════════
+
+  const Import = {
+    /**
+     * Envoie un fichier Excel (File ou ArrayBuffer) au serveur pour parsing.
+     * @param {number} projectId
+     * @param {File|ArrayBuffer} file
+     * @returns {Promise<object>}
+     */
+    parseExcel: async (projectId, file) => {
+      let buffer;
+      if (file instanceof File || file instanceof Blob) {
+        buffer = await file.arrayBuffer();
+      } else {
+        buffer = file;
+      }
+      const response = await fetch(`/api/projects/${projectId}/import-excel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: buffer
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(error.error || "Erreur import");
+      }
+      return response.json();
+    }
   };
 
   // ══════════════════════════════════════════════════════
@@ -444,6 +489,8 @@ const TestPilotAPI = (function() {
     Scenarios,
     Analyses,
     Sessions,
+    Campaigns,
+    Import,
 
     // UI components
     renderProjectSelector,
