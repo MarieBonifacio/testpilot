@@ -126,6 +126,22 @@ CREATE TABLE IF NOT EXISTS campaigns (
 CREATE INDEX IF NOT EXISTS idx_campaigns_project ON campaigns(project_id);
 CREATE INDEX IF NOT EXISTS idx_campaigns_finished ON campaigns(finished_at);
 
+-- ── P2.1 : Configuration ClickUp par projet ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS clickup_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    api_token TEXT,                       -- Clé API ClickUp (Personal Token)
+    list_id TEXT,                         -- ID de la liste cible
+    workspace_id TEXT,                    -- ID workspace (pour navigation)
+    enabled BOOLEAN DEFAULT 0,            -- Intégration activée/désactivée
+    default_priority INTEGER DEFAULT 2,  -- 1=urgent 2=high 3=normal 4=low
+    tag_prefix TEXT DEFAULT 'TestPilot', -- Préfixe des tags sur les tâches créées
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    UNIQUE(project_id)
+);
+
 -- Insert default Carter-Cash projects
 INSERT OR IGNORE INTO projects (name, tech_stack, business_domain, description) VALUES
     ('ATHENA', '.NET 4.8 (C#)', 'Vente en magasin et workflows', 'ERP historique majeur, intégrant des processus critiques liés à la vente en magasin et aux workflows. Décommissionnement prévu en 2027.'),

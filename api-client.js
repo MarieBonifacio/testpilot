@@ -151,6 +151,26 @@ const TestPilotAPI = (function() {
   };
 
   // ══════════════════════════════════════════════════════
+  // ██  CLICKUP API (P2.1)
+  // ══════════════════════════════════════════════════════
+
+  const ClickUp = {
+    getConfig:    (projectId) => get(`/api/projects/${projectId}/clickup-config`),
+    saveConfig:   (projectId, data) => put(`/api/projects/${projectId}/clickup-config`, data),
+    getLists:     (token) => get(`/api/clickup/lists?token=${encodeURIComponent(token)}`),
+    createTask:   (data) => post(`/api/clickup/create-task`, data),
+    createBatch:  (data) => post(`/api/clickup/create-batch`, data)
+  };
+
+  // ══════════════════════════════════════════════════════
+  // ██  COMEP REPORT API (P2.2)
+  // ══════════════════════════════════════════════════════
+
+  const Reports = {
+    comep: (projectId) => get(`/api/projects/${projectId}/comep-report`)
+  };
+
+  // ══════════════════════════════════════════════════════
   // ██  UI COMPONENTS
   // ══════════════════════════════════════════════════════
 
@@ -491,6 +511,8 @@ const TestPilotAPI = (function() {
     Sessions,
     Campaigns,
     Import,
+    ClickUp,
+    Reports,
 
     // UI components
     renderProjectSelector,

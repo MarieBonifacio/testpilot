@@ -776,6 +776,452 @@ app.post("/api/messages", (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════
+// ██  API CLICKUP INTEGRATION (P2.1)
+// ══════════════════════════════════════════════════════
+
+/**
+ * Helper : effectue une requête HTTPS vers api.clickup.com
+ */
+function clickupRequest(method, path, apiToken, body = null) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: "api.clickup.com",
+      path: "/api/v2" + path,
+      method,
+      headers: {
+        "Authorization": apiToken,
+        "Content-Type": "application/json",
+        ...(bodyStr ? { "Content-Length": Buffer.byteLength(bodyStr) } : {})
+      }
+    };
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", chunk => data += chunk);
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (res.statusCode >= 400) reject(new Error(json.err || json.error || `ClickUp ${res.statusCode}`));
+          else resolve(json);
+        } catch (e) {
+          reject(new Error("Réponse ClickUp invalide : " + data.slice(0, 200)));
+        }
+      });
+    });
+    req.on("error", reject);
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+/**
+ * GET /api/projects/:id/clickup-config  — Config ClickUp d'un projet
+ */
+app.get("/api/projects/:id/clickup-config", (req, res) => {
+  db.get("SELECT * FROM clickup_configs WHERE project_id = ?", [req.params.id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(row || { project_id: parseInt(req.params.id), api_token: null, list_id: null, enabled: 0 });
+  });
+});
+
+/**
+ * PUT /api/projects/:id/clickup-config  — Sauvegarder la config ClickUp
+ */
+app.put("/api/projects/:id/clickup-config", (req, res) => {
+  const { api_token, list_id, enabled, workspace_id, default_priority, tag_prefix } = req.body;
+  db.run(`
+    INSERT INTO clickup_configs (project_id, api_token, list_id, enabled, workspace_id, default_priority, tag_prefix)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(project_id) DO UPDATE SET
+      api_token        = excluded.api_token,
+      list_id          = excluded.list_id,
+      enabled          = excluded.enabled,
+      workspace_id     = excluded.workspace_id,
+      default_priority = excluded.default_priority,
+      tag_prefix       = excluded.tag_prefix,
+      updated_at       = CURRENT_TIMESTAMP
+  `, [req.params.id, api_token, list_id, enabled ? 1 : 0, workspace_id, default_priority || 2, tag_prefix || "TestPilot"],
+  function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ saved: true });
+  });
+});
+
+/**
+ * GET /api/clickup/lists?token=...  — Récupère les listes ClickUp accessibles
+ * (utilisé pour le selecteur dans la config)
+ */
+app.get("/api/clickup/lists", async (req, res) => {
+  const token = req.query.token || req.headers["x-clickup-token"];
+  if (!token) return res.status(400).json({ error: "Token ClickUp manquant" });
+  try {
+    const workspaces = await clickupRequest("GET", "/team", token);
+    const lists = [];
+    for (const team of (workspaces.teams || [])) {
+      try {
+        const spaces = await clickupRequest("GET", `/team/${team.id}/space?archived=false`, token);
+        for (const space of (spaces.spaces || [])) {
+          try {
+            const folders = await clickupRequest("GET", `/space/${space.id}/folder?archived=false`, token);
+            for (const folder of (folders.folders || [])) {
+              const fl = await clickupRequest("GET", `/folder/${folder.id}/list?archived=false`, token);
+              for (const l of (fl.lists || [])) {
+                lists.push({ id: l.id, name: l.name, folder: folder.name, space: space.name, team: team.name });
+              }
+            }
+            // Listes sans dossier
+            const noFolder = await clickupRequest("GET", `/space/${space.id}/list?archived=false`, token);
+            for (const l of (noFolder.lists || [])) {
+              lists.push({ id: l.id, name: l.name, folder: null, space: space.name, team: team.name });
+            }
+          } catch(e) { /* ignore space error */ }
+        }
+      } catch(e) { /* ignore team error */ }
+    }
+    res.json({ lists });
+  } catch (e) {
+    res.status(502).json({ error: "Erreur ClickUp : " + e.message });
+  }
+});
+
+/**
+ * POST /api/clickup/create-task  — Crée une tâche ClickUp pour un scénario FAIL/BLOQUÉ
+ * Body : { api_token, list_id, scenario, campaign_name, status, comment, priority }
+ */
+app.post("/api/clickup/create-task", async (req, res) => {
+  const { api_token, list_id, scenario, campaign_name, status, comment, priority, tag_prefix } = req.body;
+  if (!api_token || !list_id || !scenario) {
+    return res.status(400).json({ error: "api_token, list_id et scenario sont requis" });
+  }
+
+  const statusEmoji = status === "fail" ? "🔴" : "🟣";
+  const statusLabel = status === "fail" ? "FAIL" : "BLOQUÉ";
+  const prefix      = tag_prefix || "TestPilot";
+
+  // Priorité ClickUp : 1=urgent, 2=high, 3=normal, 4=low
+  const pMap = { high: 2, medium: 3, low: 4 };
+  const clickupPriority = pMap[scenario.priority] || priority || 3;
+
+  const taskName = `[${prefix}] [${statusLabel}] ${scenario.title}`;
+
+  const description = [
+    `**Campagne :** ${campaign_name || "Non renseignée"}`,
+    `**Statut :** ${statusEmoji} ${statusLabel}`,
+    `**Scénario :** ${scenario.id || scenario.scenario_id || "—"}`,
+    `**Feature :** ${scenario.feature || scenario.feature_name || "—"}`,
+    `**Référence :** ${scenario.source_reference || "—"}`,
+    "",
+    "---",
+    "### Given",
+    scenario.given || scenario.given_text || "—",
+    "### When",
+    scenario.when  || scenario.when_text  || "—",
+    "### Then",
+    scenario.then  || scenario.then_text  || "—",
+    "",
+    ...(comment ? ["---", "### Commentaire testeur", comment] : []),
+    "",
+    "---",
+    `*Créé automatiquement par TestPilot*`
+  ].join("\n");
+
+  try {
+    const task = await clickupRequest("POST", `/list/${list_id}/task`, api_token, {
+      name:     taskName,
+      markdown_description: description,
+      priority: clickupPriority,
+      tags:     [prefix.toLowerCase(), statusLabel.toLowerCase(), scenario.priority || "medium"]
+    });
+    res.json({ task_id: task.id, task_url: task.url, task_name: task.name });
+  } catch (e) {
+    res.status(502).json({ error: "Erreur création tâche ClickUp : " + e.message });
+  }
+});
+
+/**
+ * POST /api/clickup/create-batch  — Crée plusieurs tâches ClickUp en lot
+ * Body : { api_token, list_id, campaign_name, tag_prefix, items: [{ scenario, status, comment }] }
+ */
+app.post("/api/clickup/create-batch", async (req, res) => {
+  const { api_token, list_id, campaign_name, tag_prefix, items } = req.body;
+  if (!api_token || !list_id || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "api_token, list_id et items[] sont requis" });
+  }
+
+  const results = [];
+  for (const item of items) {
+    try {
+      const pMap = { high: 2, medium: 3, low: 4 };
+      const prefix = tag_prefix || "TestPilot";
+      const statusLabel = item.status === "fail" ? "FAIL" : "BLOQUÉ";
+      const statusEmoji = item.status === "fail" ? "🔴" : "🟣";
+      const sc = item.scenario;
+
+      const taskName = `[${prefix}] [${statusLabel}] ${sc.title}`;
+      const description = [
+        `**Campagne :** ${campaign_name || "—"}`,
+        `**Statut :** ${statusEmoji} ${statusLabel}`,
+        `**Scénario :** ${sc.id || "—"}`,
+        `**Feature :** ${sc.feature || "—"}`,
+        `**Référence :** ${sc.source_reference || "—"}`,
+        "",
+        "---",
+        "### Given", sc.given || "—",
+        "### When",  sc.when  || "—",
+        "### Then",  sc.then  || "—",
+        ...(item.comment ? ["", "---", "### Commentaire testeur", item.comment] : []),
+        "", "---",
+        `*Créé automatiquement par TestPilot*`
+      ].join("\n");
+
+      const task = await clickupRequest("POST", `/list/${list_id}/task`, api_token, {
+        name:     taskName,
+        markdown_description: description,
+        priority: pMap[sc.priority] || 3,
+        tags:     [prefix.toLowerCase(), statusLabel.toLowerCase(), sc.priority || "medium"]
+      });
+      results.push({ ok: true, scenario_id: sc.id, task_id: task.id, task_url: task.url });
+    } catch (e) {
+      results.push({ ok: false, scenario_id: item.scenario?.id, error: e.message });
+    }
+    // Petite pause pour ne pas dépasser le rate limit ClickUp
+    if (items.length > 1) await new Promise(r => setTimeout(r, 300));
+  }
+
+  const ok    = results.filter(r => r.ok).length;
+  const errors = results.filter(r => !r.ok).length;
+  res.json({ created: ok, errors, results });
+});
+
+// ══════════════════════════════════════════════════════
+// ██  API COMEP REPORT (P2.2)
+// ══════════════════════════════════════════════════════
+
+/**
+ * GET /api/projects/:id/comep-report
+ * Génère le rapport COMEP complet :
+ *  - Score de confiance (0-100)
+ *  - Couverture des exigences
+ *  - Risques résiduels (scénarios high priority non passés)
+ *  - Synthèse des campagnes
+ */
+app.get("/api/projects/:id/comep-report", (req, res) => {
+  const projectId = req.params.id;
+
+  // Récupérer toutes les données du projet en parallèle
+  const q = (sql, params) => new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
+  });
+  const qGet = (sql, params) => new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
+  });
+
+  Promise.all([
+    qGet("SELECT * FROM projects WHERE id = ?", [projectId]),
+    q("SELECT * FROM scenarios WHERE project_id = ?", [projectId]),
+    q(`SELECT id, name, type, started_at, finished_at, total, pass, fail, blocked, skipped, results_json
+       FROM campaigns WHERE project_id = ? ORDER BY finished_at DESC`, [projectId]),
+    q(`SELECT feature_detected, complexity, ambiguities, regression_risks, created_at
+       FROM scenario_analyses WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`, [projectId])
+  ]).then(([project, scenarios, campaigns, analyses]) => {
+    if (!project) return res.status(404).json({ error: "Projet non trouvé" });
+
+    const totalScenarios  = scenarios.length;
+    const accepted        = scenarios.filter(s => s.accepted).length;
+    const tnr             = scenarios.filter(s => s.is_tnr).length;
+    const withRef         = scenarios.filter(s => s.source_reference).length;
+    const highPriority    = scenarios.filter(s => s.priority === "high").length;
+    const highAccepted    = scenarios.filter(s => s.priority === "high" && s.accepted).length;
+
+    // Couverture globale
+    const coverageRate    = totalScenarios > 0 ? (accepted / totalScenarios * 100) : 0;
+    const traceRate       = totalScenarios > 0 ? (withRef / totalScenarios * 100) : 0;
+
+    // Dernière campagne terminée
+    const lastCampaign    = campaigns.find(c => c.finished_at) || null;
+    const lastResults     = lastCampaign ? JSON.parse(lastCampaign.results_json || "[]") : [];
+    const lastPassRate    = lastCampaign && lastCampaign.total > 0
+      ? (lastCampaign.pass / lastCampaign.total * 100) : null;
+    const lastLeakRate    = lastCampaign && lastCampaign.total > 0
+      ? ((lastCampaign.fail + lastCampaign.blocked) / lastCampaign.total * 100) : null;
+
+    // Tendance (3 dernières campagnes)
+    const recentCampaigns = campaigns.filter(c => c.finished_at).slice(0, 3);
+    const trend = recentCampaigns.map(c => ({
+      name:      c.name || "Campagne",
+      date:      c.finished_at,
+      pass_rate: c.total > 0 ? Math.round(c.pass / c.total * 100) : 0,
+      leak_rate: c.total > 0 ? Math.round((c.fail + c.blocked) / c.total * 100) : 0,
+      total:     c.total,
+      pass:      c.pass,
+      fail:      c.fail,
+      blocked:   c.blocked
+    }));
+
+    // ── Score de confiance ────────────────────────────
+    // Formule : couverture(30%) × tracabilité(20%) × taux_pass(30%) × hors_risques_critiques(20%)
+    // Chaque composante varie de 0 à 1, le score final est sur 100.
+    const compCoverage    = Math.min(coverageRate / 100, 1);
+    const compTrace       = Math.min(traceRate / 100, 1);
+    const compPass        = lastPassRate !== null ? Math.min(lastPassRate / 100, 1) : 0.5;
+    const compCritical    = highPriority > 0 ? (highAccepted / highPriority) : 1;
+
+    const confidenceScore = Math.round(
+      (compCoverage * 0.30 + compTrace * 0.20 + compPass * 0.30 + compCritical * 0.20) * 100
+    );
+
+    const confidenceLevel =
+      confidenceScore >= 80 ? "ÉLEVÉ"   :
+      confidenceScore >= 60 ? "MOYEN"   :
+      confidenceScore >= 40 ? "FAIBLE"  : "CRITIQUE";
+
+    const confidenceColor =
+      confidenceScore >= 80 ? "green" :
+      confidenceScore >= 60 ? "amber" :
+      confidenceScore >= 40 ? "red"   : "danger";
+
+    // ── Risques résiduels ─────────────────────────────
+    // 1. Scénarios high priority non acceptés (non couverts)
+    const uncoveredHigh = scenarios
+      .filter(s => s.priority === "high" && !s.accepted)
+      .map(s => ({
+        id: s.scenario_id, title: s.title, feature: s.feature_name,
+        reason: "Scénario critique non accepté (non couvert)",
+        level: "HIGH"
+      }));
+
+    // 2. Scénarios FAIL/BLOQUÉ dans la dernière campagne
+    const failedInLastCampaign = lastResults
+      .filter(r => r.status === "fail" || r.status === "blocked")
+      .map(r => ({
+        id: r.id, title: r.title, feature: r.feature,
+        reason: `Résultat ${r.status.toUpperCase()} lors de la dernière campagne`,
+        comment: r.comment || null,
+        level: r.status === "fail" ? "HIGH" : "MEDIUM"
+      }));
+
+    // 3. Scénarios sans référence exigence (non tracés)
+    const untracedHigh = scenarios
+      .filter(s => s.priority === "high" && !s.source_reference)
+      .map(s => ({
+        id: s.scenario_id, title: s.title, feature: s.feature_name,
+        reason: "Scénario critique sans référence exigence",
+        level: "MEDIUM"
+      }));
+
+    // Déduplication par id
+    const riskMap = {};
+    [...uncoveredHigh, ...failedInLastCampaign, ...untracedHigh].forEach(r => {
+      const key = r.id || r.title;
+      if (!riskMap[key] || (r.level === "HIGH" && riskMap[key].level !== "HIGH")) {
+        riskMap[key] = r;
+      }
+    });
+    const residualRisks = Object.values(riskMap);
+
+    // ── Features couverture ───────────────────────────
+    const featureMap = {};
+    scenarios.forEach(s => {
+      const f = s.feature_name || "Sans feature";
+      if (!featureMap[f]) featureMap[f] = { total: 0, accepted: 0, high: 0 };
+      featureMap[f].total++;
+      if (s.accepted)         featureMap[f].accepted++;
+      if (s.priority === "high") featureMap[f].high++;
+    });
+    const features = Object.entries(featureMap).map(([name, d]) => ({
+      name,
+      total: d.total,
+      accepted: d.accepted,
+      high: d.high,
+      coverage_pct: d.total > 0 ? Math.round(d.accepted / d.total * 100) : 0
+    })).sort((a, b) => b.high - a.high || b.total - a.total);
+
+    // ── Recommandations ───────────────────────────────
+    const recommendations = [];
+    if (coverageRate < 80) {
+      recommendations.push({
+        priority: "HIGH",
+        text: `Taux de couverture insuffisant (${Math.round(coverageRate)}%). Accepter les scénarios manquants avant la mise en production.`
+      });
+    }
+    if (traceRate < 70) {
+      recommendations.push({
+        priority: "MEDIUM",
+        text: `${totalScenarios - withRef} scénario(s) sans référence exigence. Compléter la traçabilité dans la page Traçabilité.`
+      });
+    }
+    if (lastLeakRate !== null && lastLeakRate > 15) {
+      recommendations.push({
+        priority: "HIGH",
+        text: `Taux de fuite élevé (${Math.round(lastLeakRate)}%). Analyser les tickets FAIL/BLOQUÉ avant validation COMEP.`
+      });
+    }
+    if (uncoveredHigh.length > 0) {
+      recommendations.push({
+        priority: "HIGH",
+        text: `${uncoveredHigh.length} scénario(s) de priorité haute non couvert(s). Risque résiduel critique.`
+      });
+    }
+    if (tnr === 0) {
+      recommendations.push({
+        priority: "MEDIUM",
+        text: "Aucun scénario marqué TNR. Identifier et marquer les scénarios de non-régression."
+      });
+    }
+    if (recommendations.length === 0) {
+      recommendations.push({
+        priority: "LOW",
+        text: "Tous les indicateurs sont au vert. Le projet peut être présenté en COMEP."
+      });
+    }
+
+    res.json({
+      generated_at: new Date().toISOString(),
+      project,
+      score: {
+        value: confidenceScore,
+        level: confidenceLevel,
+        color: confidenceColor,
+        components: {
+          coverage:    Math.round(compCoverage * 100),
+          traceability: Math.round(compTrace * 100),
+          pass_rate:   Math.round(compPass * 100),
+          critical_coverage: Math.round(compCritical * 100)
+        }
+      },
+      summary: {
+        totalScenarios, accepted, tnr, withRef, highPriority, highAccepted,
+        coverageRate: Math.round(coverageRate),
+        traceRate:    Math.round(traceRate),
+        totalCampaigns: campaigns.length,
+        lastPassRate:  lastPassRate !== null ? Math.round(lastPassRate) : null,
+        lastLeakRate:  lastLeakRate !== null ? Math.round(lastLeakRate) : null
+      },
+      features,
+      residualRisks,
+      trend,
+      recommendations,
+      lastCampaign: lastCampaign ? {
+        name: lastCampaign.name,
+        date: lastCampaign.finished_at,
+        total: lastCampaign.total,
+        pass:  lastCampaign.pass,
+        fail:  lastCampaign.fail,
+        blocked: lastCampaign.blocked,
+        skipped: lastCampaign.skipped
+      } : null,
+      lastAnalysis: analyses[0] ? {
+        feature_detected: analyses[0].feature_detected,
+        complexity:       analyses[0].complexity,
+        ambiguities:      JSON.parse(analyses[0].ambiguities || "[]"),
+        regression_risks: JSON.parse(analyses[0].regression_risks || "[]"),
+        date:             analyses[0].created_at
+      } : null
+    });
+  }).catch(err => res.status(500).json({ error: err.message }));
+});
+
+// ══════════════════════════════════════════════════════
 // ██  STATIC FILES
 // ══════════════════════════════════════════════════════
 

@@ -52,7 +52,22 @@ const db = new sqlite3.Database(dbPath, (err) => {
           `CREATE INDEX IF NOT EXISTS idx_campaigns_project ON campaigns(project_id)`,
           `CREATE INDEX IF NOT EXISTS idx_campaigns_finished ON campaigns(finished_at)`,
           // P1.3 : champ source_reference sur scenarios (peut déjà exister)
-          `ALTER TABLE scenarios ADD COLUMN source_reference TEXT`
+          `ALTER TABLE scenarios ADD COLUMN source_reference TEXT`,
+          // P2.1 : table clickup_configs
+          `CREATE TABLE IF NOT EXISTS clickup_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            api_token TEXT,
+            list_id TEXT,
+            workspace_id TEXT,
+            enabled BOOLEAN DEFAULT 0,
+            default_priority INTEGER DEFAULT 2,
+            tag_prefix TEXT DEFAULT 'TestPilot',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+            UNIQUE(project_id)
+          )`
         ];
 
         let pending = migrations.length;
