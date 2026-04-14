@@ -30,17 +30,25 @@ export function ProjectSelector() {
     }
   };
 
-  if (loading) return <div className="text-sm text-[var(--text-muted)]">Chargement...</div>;
+  if (loading) return <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Chargement…</div>;
 
   return (
     <div className="flex items-center gap-2">
-      <label className="text-sm font-semibold text-[var(--text-muted)]">Projet :</label>
+      <label className="text-xs font-semibold" style={{ color: 'var(--text-dim)' }}>Projet</label>
       <select
-        className="px-3 py-1.5 border border-[var(--border)] rounded-md text-sm bg-white min-w-[180px] cursor-pointer focus:outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[rgba(59,109,17,0.15)]"
+        className="text-sm rounded min-w-[180px] cursor-pointer"
+        style={{
+          background: 'var(--bg-hover)',
+          border: '1px solid var(--border)',
+          color: 'var(--text)',
+          padding: '5px 10px',
+          outline: 'none',
+          borderRadius: 'var(--radius-sm)',
+        }}
         value={projectId || ''}
         onChange={handleChange}
       >
-        <option value="">-- Sélectionner --</option>
+        <option value="">— Sélectionner —</option>
         {projects.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name} ({p.scenario_count || 0})
@@ -49,10 +57,10 @@ export function ProjectSelector() {
       </select>
       <button
         onClick={() => setShowModal(true)}
-        className="w-7 h-7 border border-[var(--border)] rounded-md bg-white text-[var(--primary)] font-semibold flex items-center justify-center hover:bg-[var(--primary)] hover:text-white transition-colors"
+        className="btn-icon"
         title="Nouveau projet"
       >
-        <Plus size={16} />
+        <Plus size={15} />
       </button>
 
       {showModal && (
@@ -70,66 +78,45 @@ function NewProjectModal({ onSave, onClose }: { onSave: (data: Partial<Project>)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      alert('Le nom du projet est requis');
-      return;
-    }
+    if (!name.trim()) { alert('Le nom du projet est requis'); return; }
     onSave({ name: name.trim(), tech_stack: techStack.trim(), business_domain: domain.trim(), description: desc.trim() });
   };
 
+  const fieldStyle = { marginBottom: '16px' } as React.CSSProperties;
+  const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' } as React.CSSProperties;
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-xl p-6 w-[90%] max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-[var(--primary)] mb-5">Nouveau projet</h3>
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-[90%] max-w-md rounded-xl p-6"
+        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-bold mb-5" style={{ color: 'var(--accent)' }}>Nouveau projet</h3>
         <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-[var(--text-muted)] mb-1.5">Nom du projet *</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm"
-              placeholder="Ex: ATHENA, Module Commandes..."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Nom du projet *</label>
+            <input type="text" placeholder="Ex: ATHENA, Module Commandes…" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-[var(--text-muted)] mb-1.5">Stack technique</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm"
-              placeholder="Ex: .NET 4.8 (C#), Python/Robocorp..."
-              value={techStack}
-              onChange={(e) => setTechStack(e.target.value)}
-            />
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Stack technique</label>
+            <input type="text" placeholder="Ex: .NET 4.8 (C#), Python/Robocorp…" value={techStack} onChange={(e) => setTechStack(e.target.value)} />
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-[var(--text-muted)] mb-1.5">Domaine métier</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm"
-              placeholder="Ex: Encaissement, E-commerce..."
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-            />
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Domaine métier</label>
+            <input type="text" placeholder="Ex: Encaissement, E-commerce…" value={domain} onChange={(e) => setDomain(e.target.value)} />
           </div>
-          <div className="mb-5">
-            <label className="block text-sm font-semibold text-[var(--text-muted)] mb-1.5">Description</label>
-            <textarea
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm resize-none"
-              rows={3}
-              placeholder="Description optionnelle..."
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-            />
+          <div style={fieldStyle}>
+            <label style={labelStyle}>Description</label>
+            <textarea rows={3} placeholder="Description optionnelle…" value={desc} onChange={(e) => setDesc(e.target.value)} style={{ minHeight: 'unset' }} />
           </div>
-          <div className="flex justify-end gap-3">
-            <button type="button" className="px-4 py-2 border border-[var(--border)] rounded-md bg-white text-[var(--text)] font-semibold hover:bg-[var(--bg-alt)]" onClick={onClose}>
-              Annuler
-            </button>
-            <button type="submit" className="px-4 py-2 bg-[var(--primary)] text-white rounded-md font-semibold hover:bg-[var(--primary-dark)]">
-              Créer
-            </button>
+          <div className="flex justify-end gap-2 mt-2">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Annuler</button>
+            <button type="submit" className="btn btn-primary">Créer</button>
           </div>
         </form>
       </div>

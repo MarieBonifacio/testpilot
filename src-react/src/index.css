@@ -2,132 +2,312 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────
+   TestPilot — Design system inspiré de prompt-library.
+   Toutes les couleurs sont centralisées en variables CSS.
+   Thème sombre par défaut, clair via [data-theme="light"].
+   ───────────────────────────────────────────── */
+
+/* ─── Thème SOMBRE (défaut) ─── */
 :root {
-  --primary: #3B6D11;
-  --primary-light: #4a8a1a;
-  --primary-dark: #2d5309;
-  --bg: #ffffff;
-  --bg-alt: #f8f9fa;
-  --text: #212529;
-  --text-muted: #6c757d;
-  --border: #dee2e6;
-  --danger: #dc3545;
-  --success: #28a745;
-  --warning: #e8a020;
+  /* Fonds */
+  --bg:          #0f1419;
+  --bg-elevated: #1a1f2e;
+  --bg-hover:    #242b3d;
+
+  /* Bordures */
+  --border:        #2d3548;
+  --border-strong: #3d4760;
+
+  /* Texte */
+  --text:       #e6e9ef;
+  --text-muted: #8b93a7;
+  --text-dim:   #5a6378;
+
+  /* Accent (bleu-lavande prompt-library) */
+  --accent:       #7aa2f7;
+  --accent-hover: #9bb8ff;
+  --accent-bg:    rgba(122, 162, 247, 0.12);
+
+  /* Sémantiques */
+  --success:    #9ece6a;
+  --success-bg: rgba(158, 206, 106, 0.12);
+
+  --warning:    #e0af68;
+  --warning-bg: rgba(224, 175, 104, 0.18);
+
+  --danger:    #f7768e;
+  --danger-bg: rgba(247, 118, 142, 0.12);
+
+  /* Purple (TNR, boundary, bloqué) */
+  --purple:    #bb9af7;
+  --purple-alt: #9d7cd8;
+  --purple-bg: rgba(187, 154, 247, 0.12);
+
+  /* Info (edge-case, Given) */
+  --info:    #7dcfff;
+  --info-bg: rgba(125, 207, 255, 0.12);
+
+  /* Divers */
+  --code-bg:  #0a0e14;
+  --shadow:    0 4px 24px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+  /* Forme & animation */
+  --radius:     8px;
+  --radius-sm:  5px;
+  --transition: 0.18s ease;
+
+  /* Typographie */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+}
+
+/* ─── Thème CLAIR ─── */
+[data-theme="light"] {
+  --bg:          #f8f9fc;
+  --bg-elevated: #ffffff;
+  --bg-hover:    #eef1f8;
+
+  --border:        #d8dce8;
+  --border-strong: #b8bfd0;
+
+  --text:       #1e2433;
+  --text-muted: #6b7394;
+  --text-dim:   #9ba3bb;
+
+  --accent:       #4a7cf7;
+  --accent-hover: #2f66f5;
+  --accent-bg:    rgba(74, 124, 247, 0.08);
+
+  --success:    #3d9e30;
+  --success-bg: rgba(61, 158, 48, 0.1);
+
+  --warning:    #c47c0a;
+  --warning-bg: rgba(196, 124, 10, 0.1);
+
+  --danger:    #e0314e;
+  --danger-bg: rgba(224, 49, 78, 0.08);
+
+  --purple:    #7c3aed;
+  --purple-alt: #6d28d9;
+  --purple-bg: rgba(124, 58, 237, 0.08);
+
+  --info:    #0891b2;
+  --info-bg: rgba(8, 145, 178, 0.08);
+
+  --code-bg:   #f0f2f8;
+  --shadow:    0 4px 20px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── Reset ─── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg);
   color: var(--text);
+  font-size: 14px;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--transition), color var(--transition);
 }
 
+/* ─── Éléments de formulaire ─── */
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  width: 100%;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.5;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+/* ─── Boutons ─── */
 .btn {
-  @apply px-4 py-2 rounded-md font-semibold transition-all duration-150 cursor-pointer;
+  @apply inline-flex items-center gap-1.5 px-4 py-2 rounded font-semibold text-sm transition-all duration-150 cursor-pointer border-0 outline-none;
 }
 
 .btn-primary {
-  @apply bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)];
+  background: var(--accent);
+  color: #fff;
 }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn-secondary {
-  @apply bg-white border border-[var(--border)] text-[var(--text)] hover:border-[var(--primary)] hover:text-[var(--primary)];
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .btn-success {
-  @apply bg-[var(--success)] text-white hover:bg-[#218838];
+  background: var(--success);
+  color: var(--bg);
 }
+.btn-success:hover { opacity: 0.85; }
 
 .btn-danger {
-  @apply bg-[var(--danger)] text-white hover:bg-[#c82333];
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--border);
+}
+.btn-danger:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
 }
 
-.input, .textarea, .select {
-  @apply w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm bg-white;
-  font-family: inherit;
+.btn-icon {
+  @apply inline-flex items-center justify-center w-8 h-8 rounded;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+}
+.btn-icon:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
-.input:focus, .textarea:focus, .select:focus {
-  @apply outline-none border-[var(--primary)] shadow-[0_0_0_2px_rgba(59,109,17,0.15)];
-}
-
-.panel {
-  @apply bg-[var(--bg-alt)] border border-[var(--border)] rounded-lg p-4 mb-4;
-}
-
+/* ─── Badges ─── */
 .badge {
-  @apply inline-block px-2 py-0.5 rounded-full text-xs font-bold uppercase;
+  @apply inline-block px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide;
 }
 
-.badge-type {
-  @apply bg-[var(--primary)] text-white;
+/* Type de scénario */
+.badge-type          { background: var(--accent-bg);   color: var(--accent); }
+.badge-type.negative { background: var(--danger-bg);   color: var(--danger); }
+.badge-type.edge-case { background: var(--info-bg);    color: var(--info); }
+.badge-type.boundary  { background: var(--purple-bg);  color: var(--purple); }
+
+/* Priorité */
+.badge-priority        { background: var(--bg-hover);    color: var(--text-muted); border: 1px solid var(--border); }
+.badge-priority.high   { background: var(--danger-bg);   color: var(--danger); border-color: var(--danger); }
+.badge-priority.medium { background: var(--warning-bg);  color: var(--warning); border-color: var(--warning); }
+.badge-priority.low    { background: var(--success-bg);  color: var(--success); border-color: var(--success); }
+
+/* TNR */
+.badge-tnr {
+  background: var(--purple-bg);
+  color: var(--purple);
+  @apply inline-block px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide;
 }
 
-.badge-type.negative {
-  @apply bg-[var(--danger)];
-}
-
-.badge-type.edge-case {
-  @apply bg-[#17a2b8];
-}
-
-.badge-type.boundary {
-  @apply bg-[#534AB7];
-}
-
-.badge-priority {
-  @apply bg-[var(--bg-alt)] text-[var(--text-muted)] border border-[var(--border)];
-}
-
-.badge-priority.high {
-  @apply bg-[#f8d7da] text-[#721c24] border-[#f5c6cb];
-}
-
-.badge-priority.medium {
-  @apply bg-[#fff3cd] text-[#856404] border-[#ffeeba];
-}
-
-.badge-priority.low {
-  @apply bg-[#d4edda] text-[#155724] border-[#c3e6cb];
-}
-
-.loader {
-  @apply flex items-center gap-2.5 text-[var(--text-muted)] py-4;
-}
-
+/* ─── Spinner ─── */
 .spinner {
-  @apply w-5 h-5 border-2 border-[var(--border)] border-t-[var(--primary)] rounded-full animate-spin;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Loader row ─── */
+.loader {
+  @apply flex items-center gap-2.5 py-4;
+  color: var(--text-muted);
+}
+
+/* ─── Messages d'erreur ─── */
 .error-msg {
-  @apply bg-[#f8d7da] border border-[#f5c6cb] text-[#721c24] px-4 py-3 rounded-md mb-4 text-sm;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  @apply px-4 py-3 rounded mb-4 text-sm;
 }
 
+/* ─── Cartes scénarios ─── */
 .scenario-card {
-  @apply border border-[var(--border)] rounded-lg p-4 bg-white transition-shadow;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  @apply rounded-lg p-4 transition-shadow;
 }
-
 .scenario-card:hover {
-  @apply shadow-md;
+  box-shadow: var(--shadow-sm);
+  border-color: var(--border-strong);
 }
-
 .scenario-card.accepted {
-  @apply border-l-4 border-l-[var(--success)];
+  border-left: 3px solid var(--success);
 }
 
+/* ─── Empty state ─── */
 .empty-state {
-  @apply text-center py-10 text-[var(--text-muted)];
+  @apply text-center py-10;
+  color: var(--text-muted);
 }
 
+/* ─── Callouts ─── */
 .callout {
   @apply px-3 py-2 mt-2 rounded;
 }
-
 .callout-amber {
-  @apply bg-[#FAEEDA] border-l-4 border-l-[#EF9F27];
+  background: var(--warning-bg);
+  border-left: 3px solid var(--warning);
+  color: var(--warning);
+}
+.callout-purple {
+  background: var(--purple-bg);
+  border-left: 3px solid var(--purple);
+  color: var(--purple);
 }
 
-.callout-purple {
-  @apply bg-[#EEEDFE] border-l-4 border-l-[#534AB7];
+/* ─── Panel générique ─── */
+.panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  @apply rounded-lg p-4 mb-4;
 }
+
+/* ─── Inputs utilitaires ─── */
+.input, .textarea, .select {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  @apply w-full px-3 py-2 rounded text-sm;
+}
+.input:focus, .textarea:focus, .select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+  outline: none;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }

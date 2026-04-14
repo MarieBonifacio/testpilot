@@ -330,35 +330,37 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
 
   return (
     <div>
-      <header className="mb-6 pb-4 border-b border-[var(--border)]">
-        <h1 className="text-xl font-bold text-[var(--primary)]">TestPilot</h1>
-        <p className="text-sm text-[var(--text-muted)] mt-1">Générateur de scénarios de tests assisté par IA</p>
+      <header className="mb-6 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>Rédaction</h1>
+        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Générateur de scénarios de tests assisté par IA</p>
       </header>
 
       {!projectId && (
-        <div className="bg-[#fff3cd] border border-[#ffc107] rounded-lg p-5 mb-6 flex items-center gap-4">
-          <span className="text-2xl">⚠️</span>
-          <p className="text-[#856404] font-medium m-0">Veuillez sélectionner un projet pour commencer.</p>
+        <div className="rounded-lg p-4 mb-6 flex items-center gap-3" style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning)' }}>
+          <span style={{ color: 'var(--warning)', fontSize: '1.1rem' }}>⚠</span>
+          <p className="text-sm font-medium m-0" style={{ color: 'var(--warning)' }}>Veuillez sélectionner un projet pour commencer.</p>
         </div>
       )}
 
       {/* Provider */}
       <div className="panel">
-        <div className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] mb-3">Modèle IA</div>
+        <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Modèle IA</div>
         <div className="flex flex-wrap gap-2 mb-4">
           {Object.entries(PROVIDERS).map(([id, cfg]) => (
             <button
               key={id}
               onClick={() => setCurrentProvider(id as ProviderKey)}
-              className={`px-3 py-1.5 border rounded-md text-sm font-semibold cursor-pointer flex items-center gap-1.5 transition-all ${
-                currentProvider === id
-                  ? 'border-[var(--primary)] bg-[rgba(59,109,17,0.08)] text-[var(--primary)]'
-                  : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--primary)] hover:text-[var(--primary)]'
-              }`}
+              className="px-3 py-1.5 rounded text-sm font-semibold cursor-pointer flex items-center gap-1.5 transition-all"
+              style={currentProvider === id
+                ? { border: '1px solid var(--accent)', background: 'var(--accent-bg)', color: 'var(--accent)' }
+                : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
+              }
             >
-              <span className={`w-2 h-2 rounded-full ${currentProvider === id ? 'bg-[var(--primary)]' : 'bg-[var(--border)]'}`} />
+              <span className="w-2 h-2 rounded-full" style={{ background: currentProvider === id ? 'var(--accent)' : 'var(--border)' }} />
               {cfg.label}
-              {cfg.offline && <span className="bg-[#d4edda] text-[#155724] text-[0.65rem] font-bold px-1.5 rounded-full ml-1">offline</span>}
+              {cfg.offline && (
+                <span className="text-[0.65rem] font-bold px-1.5 rounded ml-1" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>offline</span>
+              )}
             </button>
           ))}
         </div>
@@ -367,29 +369,27 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
 
       {/* Source */}
       <div className="panel">
-        <div className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] mb-3">Source</div>
+        <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Source</div>
         <div className="flex flex-wrap gap-2 mb-3">
           {(['user-story', 'spec', 'oral', 'rule'] as SourceType[]).map((type) => (
-            <label key={type} className="flex items-center gap-1.5 px-3 py-1.5 border border-[var(--border)] rounded-md cursor-pointer transition-all">
-              <input
-                type="radio"
-                name="sourceType"
-                value={type}
-                checked={sourceType === type}
-                onChange={() => setSourceType(type)}
-                className="hidden"
-              />
-              <span className={`text-sm font-medium ${sourceType === type ? 'text-[var(--primary)]' : 'text-[var(--text-muted)]'}`}>
-                {type === 'user-story' && 'User Story'}
-                {type === 'spec' && 'Spécification'}
-                {type === 'oral' && 'Description orale'}
-                {type === 'rule' && 'Règle de gestion'}
-              </span>
+            <label
+              key={type}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-all text-sm font-medium"
+              style={sourceType === type
+                ? { border: '1px solid var(--accent)', background: 'var(--accent-bg)', color: 'var(--accent)' }
+                : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
+              }
+            >
+              <input type="radio" name="sourceType" value={type} checked={sourceType === type} onChange={() => setSourceType(type)} className="hidden" />
+              {type === 'user-story' && 'User Story'}
+              {type === 'spec' && 'Spécification'}
+              {type === 'oral' && 'Description orale'}
+              {type === 'rule' && 'Règle de gestion'}
             </label>
           ))}
         </div>
         <textarea
-          className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm bg-white min-h-[140px] resize-y" style={{ fontFamily: 'inherit' }}
+          className="w-full rounded text-sm resize-y min-h-[140px]"
           placeholder="Colle ici ta user story, ta spec ou ta description fonctionnelle…"
           value={sourceText}
           onChange={(e) => setSourceText(e.target.value)}
@@ -397,20 +397,20 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
       </div>
 
       <div className="flex flex-wrap gap-2.5 mb-6">
-        <button className="btn btn-primary flex items-center gap-2" onClick={generate} disabled={loading || !projectId}>
-          <Play size={16} />
+        <button className="btn btn-primary" onClick={generate} disabled={loading || !projectId}>
+          <Play size={15} />
           Analyser et générer
         </button>
         <button className="btn btn-success" onClick={acceptAll} disabled={!projectId || scenarios.length === 0 || acceptedCount === scenarios.length}>
-          <CheckCircle size={16} />
+          <CheckCircle size={15} />
           Tout accepter
         </button>
         <button className="btn btn-secondary" onClick={exportJSON} disabled={acceptedCount === 0}>
-          <Download size={16} />
+          <Download size={15} />
           Exporter JSON
         </button>
         <button className="btn btn-secondary" onClick={clearAll} disabled={!projectId || scenarios.length === 0}>
-          <Trash2 size={16} />
+          <Trash2 size={15} />
           Effacer tout
         </button>
       </div>
@@ -422,44 +422,46 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
         </div>
       )}
 
-      {error && <div className="error-msg flex items-center gap-2">{error}</div>}
+      {error && <div className="error-msg">{error}</div>}
 
       {/* Analysis */}
       {analysis && (
         <div className="panel">
-          <div className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] mb-3">Analyse de la source</div>
+          <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Analyse de la source</div>
           <div className="grid grid-cols-3 gap-2.5 mb-3">
-            <div className="bg-white border border-[var(--border)] rounded-md px-3 py-2">
-              <div className="text-[0.72rem] text-[var(--text-muted)] mb-1">Feature détectée</div>
-              <div className="text-sm font-semibold text-[var(--primary)]">{analysis.feature_detected}</div>
+            <div className="rounded px-3 py-2" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)' }}>
+              <div className="text-[0.72rem] mb-1" style={{ color: 'var(--text-muted)' }}>Feature détectée</div>
+              <div className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{analysis.feature_detected}</div>
             </div>
-            <div className="bg-white border border-[var(--border)] rounded-md px-3 py-2">
-              <div className="text-[0.72rem] text-[var(--text-muted)] mb-1">Complexité estimée</div>
-              <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
-                analysis.complexity === 'simple' ? 'bg-[#d4edda] text-[#155724]' :
-                analysis.complexity === 'moyenne' ? 'bg-[#fff3cd] text-[#856404]' :
-                'bg-[#f8d7da] text-[#721c24]'
-              }`}>
+            <div className="rounded px-3 py-2" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)' }}>
+              <div className="text-[0.72rem] mb-1" style={{ color: 'var(--text-muted)' }}>Complexité estimée</div>
+              <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold" style={
+                analysis.complexity === 'simple'
+                  ? { background: 'var(--success-bg)', color: 'var(--success)' }
+                  : analysis.complexity === 'moyenne'
+                  ? { background: 'var(--warning-bg)', color: 'var(--warning)' }
+                  : { background: 'var(--danger-bg)', color: 'var(--danger)' }
+              }>
                 {analysis.complexity}
-              </div>
+              </span>
             </div>
-            <div className="bg-white border border-[var(--border)] rounded-md px-3 py-2">
-              <div className="text-[0.72rem] text-[var(--text-muted)] mb-1">Ambiguïtés</div>
-              <div className="text-sm font-semibold text-[var(--primary)]">{analysis.ambiguities?.length || 0}</div>
+            <div className="rounded px-3 py-2" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)' }}>
+              <div className="text-[0.72rem] mb-1" style={{ color: 'var(--text-muted)' }}>Ambiguïtés</div>
+              <div className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{analysis.ambiguities?.length || 0}</div>
             </div>
           </div>
           {analysis.ambiguities?.length > 0 && (
             <div className="callout callout-amber">
-              <div className="text-xs font-bold mb-1 text-[#854F0B]">Préconditions ambiguës</div>
-              <ul className="text-[0.83rem] text-[#633806] m-0 pl-4">
+              <div className="text-xs font-bold mb-1">Préconditions ambiguës</div>
+              <ul className="text-[0.83rem] m-0 pl-4">
                 {analysis.ambiguities.map((a, i) => <li key={i}>{a}</li>)}
               </ul>
             </div>
           )}
           {analysis.regression_risks?.length > 0 && (
             <div className="callout callout-purple mt-2">
-              <div className="text-xs font-bold mb-1 text-[#3C3489]">Risques de régression</div>
-              <ul className="text-[0.83rem] text-[#534AB7] m-0 pl-4">
+              <div className="text-xs font-bold mb-1">Risques de régression</div>
+              <ul className="text-[0.83rem] m-0 pl-4">
                 {analysis.regression_risks.map((r, i) => <li key={i}>{r}</li>)}
               </ul>
             </div>
@@ -471,7 +473,7 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
       {scenarios.length > 0 && (
         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
           <h2 className="text-base font-bold">Scénarios générés</h2>
-          <span className="text-sm text-[var(--text-muted)]">{acceptedCount} accepté / {scenarios.length} total</span>
+          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{acceptedCount} accepté / {scenarios.length} total</span>
         </div>
       )}
 
@@ -504,10 +506,9 @@ function ProviderFields({ provider, settings, onChange }: { provider: ProviderKe
     <div className="space-y-3">
       {cfg.needsKey && (
         <div>
-          <div className="text-xs font-semibold text-[var(--text-muted)] mb-1">Clé API</div>
+          <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Clé API</div>
           <input
             type="password"
-            className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm"
             placeholder={cfg.keyPlaceholder}
             value={settings.key}
             onChange={(e) => onChange({ ...settings, key: e.target.value })}
@@ -516,19 +517,15 @@ function ProviderFields({ provider, settings, onChange }: { provider: ProviderKe
       )}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <div className="text-xs font-semibold text-[var(--text-muted)] mb-1">Modèle</div>
-          <select
-            className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm bg-white"
-            value={settings.model}
-            onChange={(e) => onChange({ ...settings, model: e.target.value })}
-          >
+          <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Modèle</div>
+          <select value={settings.model} onChange={(e) => onChange({ ...settings, model: e.target.value })}>
             {cfg.models.map((m) => <option key={m} value={m}>{m}</option>)}
             <option value="__custom__">Autre (saisir)…</option>
           </select>
           {settings.model === '__custom__' && (
             <input
               type="text"
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm mt-2"
+              className="mt-2"
               placeholder="ex : llama3.2:latest"
               value={settings.modelCustom || ''}
               onChange={(e) => onChange({ ...settings, modelCustom: e.target.value })}
@@ -537,10 +534,9 @@ function ProviderFields({ provider, settings, onChange }: { provider: ProviderKe
         </div>
         {cfg.endpointEditable && (
           <div>
-            <div className="text-xs font-semibold text-[var(--text-muted)] mb-1">Endpoint URL</div>
+            <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Endpoint URL</div>
             <input
               type="text"
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-md text-sm"
               value={settings.endpoint}
               onChange={(e) => onChange({ ...settings, endpoint: e.target.value })}
             />
@@ -548,9 +544,9 @@ function ProviderFields({ provider, settings, onChange }: { provider: ProviderKe
         )}
       </div>
       {cfg.offline && (
-        <div className="text-xs text-[var(--text-muted)]">
-          Ollama doit tourner localement — <a href="https://ollama.ai" target="_blank" rel="noopener" className="text-[var(--primary)]">ollama.ai</a>
-          puis <code className="bg-[var(--bg-alt)] px-1 rounded">ollama serve</code>
+        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Ollama doit tourner localement — <a href="https://ollama.ai" target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>ollama.ai</a>
+          {' '}puis <code>ollama serve</code>
         </div>
       )}
     </div>
@@ -562,49 +558,53 @@ function ScenarioCard({ scenario, onToggleAccept, onToggleTNR, onDelete }: { sce
     <div className={`scenario-card ${scenario.accepted ? 'accepted' : ''}`}>
       <div className="flex justify-between items-start mb-3 gap-3 flex-wrap">
         <div>
-          <div className="text-[0.72rem] font-mono text-[var(--text-muted)]">{scenario.scenario_id}</div>
+          <div className="text-[0.72rem] mb-0.5" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>{scenario.scenario_id}</div>
           <div className="font-semibold text-sm">{scenario.title}</div>
         </div>
         <div className="flex gap-1.5 flex-wrap">
           <span className={`badge badge-type ${scenario.scenario_type}`}>{scenario.scenario_type}</span>
           <span className={`badge badge-priority ${scenario.priority}`}>{scenario.priority}</span>
-          {scenario.is_tnr && <span className="bg-[#6f42c1] text-white text-[0.65rem] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">TNR</span>}
+          {scenario.is_tnr && <span className="badge-tnr">TNR</span>}
         </div>
       </div>
       <div className="mb-2">
-        <div className="text-[0.72rem] font-bold text-[var(--text-muted)] uppercase mb-0.5">Given</div>
+        <div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>Given</div>
         <div className="text-sm">{scenario.given_text}</div>
       </div>
       <div className="mb-2">
-        <div className="text-[0.72rem] font-bold text-[var(--text-muted)] uppercase mb-0.5">When</div>
+        <div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>When</div>
         <div className="text-sm">{scenario.when_text}</div>
       </div>
       <div className="mb-3">
-        <div className="text-[0.72rem] font-bold text-[var(--text-muted)] uppercase mb-0.5">Then</div>
+        <div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>Then</div>
         <div className="text-sm">{scenario.then_text}</div>
       </div>
-      <div className="flex gap-1.5 pt-3 border-t border-[var(--border)] flex-wrap">
+      <div className="flex gap-1.5 pt-3 flex-wrap" style={{ borderTop: '1px solid var(--border)' }}>
         <button
-          className={`px-3 py-1 text-xs font-semibold rounded border cursor-pointer transition-all ${
-            scenario.accepted
-              ? 'bg-white border-[var(--border)] text-[var(--text)] hover:border-[var(--primary)]'
-              : 'bg-[var(--success)] border-transparent text-white hover:bg-[#218838]'
-          }`}
+          className="px-3 py-1 text-xs font-semibold rounded cursor-pointer transition-all"
+          style={scenario.accepted
+            ? { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
+            : { border: '1px solid var(--success)', background: 'var(--success-bg)', color: 'var(--success)' }
+          }
           onClick={onToggleAccept}
         >
           {scenario.accepted ? '✓ Accepté — Retirer' : 'Accepter'}
         </button>
         <button
-          className={`px-2 py-1 text-xs font-semibold border rounded cursor-pointer transition-all ${
-            scenario.is_tnr
-              ? 'bg-[#6f42c1] border-transparent text-white'
-              : 'bg-white border-[#6f42c1] text-[#6f42c1] hover:bg-[#6f42c1] hover:text-white'
-          }`}
+          className="px-2 py-1 text-xs font-semibold rounded cursor-pointer transition-all"
+          style={scenario.is_tnr
+            ? { border: '1px solid var(--purple)', background: 'var(--purple-bg)', color: 'var(--purple)' }
+            : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
+          }
           onClick={onToggleTNR}
         >
           TNR
         </button>
-        <button className="px-2 py-1 text-xs font-semibold border border-[var(--border)] rounded bg-white text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white cursor-pointer ml-auto" onClick={onDelete}>
+        <button
+          className="px-2 py-1 text-xs font-semibold rounded cursor-pointer transition-all ml-auto"
+          style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger)' }}
+          onClick={onDelete}
+        >
           Supprimer
         </button>
       </div>

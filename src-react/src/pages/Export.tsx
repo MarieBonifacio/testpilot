@@ -4,7 +4,7 @@ import { scenariosApi } from '../lib/api';
 import type { Scenario } from '../types';
 import { Download, FileJson, Table, Code, FileSpreadsheet } from 'lucide-react';
 
-type ExportFormat = 'json' | 'gherkin' | 'csv' | 'xlsx' | 'testlink';
+type ExportFormat = 'json' | 'gherkin' | 'csv';
 
 export function Export() {
   const { projectId, project } = useProject();
@@ -45,21 +45,24 @@ export function Export() {
         filename = `${project?.name || 'testpilot'}-scenarios.json`;
         break;
       case 'gherkin':
-        content = filtered.map(s => `Feature: ${s.feature_name || 'Feature'}\n\n  ${s.scenario_type === 'negative' ? '@negative\n  ' : ''}Scenario: ${s.title}\n    Given ${s.given_text}\n    When ${s.when_text}\n    Then ${s.then_text}\n`).join('\n');
+        content = filtered.map(s =>
+          `Feature: ${s.feature_name || 'Feature'}\n\n  ${s.scenario_type === 'negative' ? '@negative\n  ' : ''}Scenario: ${s.title}\n    Given ${s.given_text}\n    When ${s.when_text}\n    Then ${s.then_text}\n`
+        ).join('\n');
         mimeType = 'text/plain';
         filename = `${project?.name || 'testpilot'}-scenarios.feature`;
         break;
       case 'csv': {
         const headers = ['ID', 'Title', 'Type', 'Priority', 'Given', 'When', 'Then', 'Feature', 'TNR'];
-        const rows = filtered.map(s => [s.scenario_id, s.title, s.scenario_type, s.priority, s.given_text, s.when_text, s.then_text, s.feature_name || '', s.is_tnr ? 'Yes' : 'No'].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+        const rows = filtered.map(s =>
+          [s.scenario_id, s.title, s.scenario_type, s.priority, s.given_text, s.when_text, s.then_text, s.feature_name || '', s.is_tnr ? 'Yes' : 'No']
+            .map(v => `"${String(v).replace(/"/g, '""')}"`)
+            .join(',')
+        );
         content = [headers.join(','), ...rows].join('\n');
         mimeType = 'text/csv';
         filename = `${project?.name || 'testpilot'}-scenarios.csv`;
         break;
       }
-      default:
-        alert('Format non encore implémenté');
-        return;
     }
 
     const blob = new Blob([content], { type: mimeType });
@@ -76,89 +79,94 @@ export function Export() {
 
   if (!projectId) {
     return (
-      <div className="text-center py-10 text-[var(--text-muted)]">
+      <div className="empty-state">
         <Download size={48} className="mx-auto mb-4 opacity-30" />
         <p>Veuillez sélectionner un projet pour exporter les scénarios.</p>
       </div>
     );
   }
 
+  const formats: { key: ExportFormat | 'xlsx'; label: string; desc: string; icon: React.ReactNode; disabled?: boolean }[] = [
+    { key: 'json',    label: 'JSON',              desc: 'Format structuré, idéal pour l\'intégration', icon: <FileJson size={20} /> },
+    { key: 'gherkin', label: 'Gherkin / Cucumber', desc: 'Syntaxe BDD pour Cucumber, Behat…',           icon: <Code size={20} /> },
+    { key: 'csv',     label: 'CSV',               desc: 'Tableur, Excel, Google Sheets',               icon: <Table size={20} /> },
+    { key: 'xlsx',    label: 'Excel (XLSX)',       desc: 'Bientôt disponible',                          icon: <FileSpreadsheet size={20} />, disabled: true },
+  ];
+
   return (
     <div>
-      <h1 className="text-xl font-bold text-[var(--primary)] mb-1">Export</h1>
-      <p className="text-sm text-[var(--text-muted)] mb-7">Exportez vos scénarios dans différents formats</p>
+      <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--accent)' }}>Export</h1>
+      <p className="text-sm mb-7" style={{ color: 'var(--text-muted)' }}>Exportez vos scénarios dans différents formats</p>
 
       {/* Format Selection */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <button
-          onClick={() => setFormat('json')}
-          className={`bg-white border rounded-xl p-5 text-left transition-all ${format === 'json' ? 'border-2 border-[var(--primary)] bg-[rgba(59,109,17,0.04)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
-        >
-          <FileJson className="text-lg mb-2.5" />
-          <div className="font-bold text-sm">JSON</div>
-          <div className="text-xs text-[var(--text-muted)] mt-1">Format structuré, idéal pour l'intégration</div>
-        </button>
-        <button
-          onClick={() => setFormat('gherkin')}
-          className={`bg-white border rounded-xl p-5 text-left transition-all ${format === 'gherkin' ? 'border-2 border-[var(--primary)] bg-[rgba(59,109,17,0.04)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
-        >
-          <Code className="text-lg mb-2.5" />
-          <div className="font-bold text-sm">Gherkin / Cucumber</div>
-          <div className="text-xs text-[var(--text-muted)] mt-1">Syntaxe BDD pour Cucumber, Behat...</div>
-        </button>
-        <button
-          onClick={() => setFormat('csv')}
-          className={`bg-white border rounded-xl p-5 text-left transition-all ${format === 'csv' ? 'border-2 border-[var(--primary)] bg-[rgba(59,109,17,0.04)]' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
-        >
-          <Table className="text-lg mb-2.5" />
-          <div className="font-bold text-sm">CSV</div>
-          <div className="text-xs text-[var(--text-muted)] mt-1">Tableur, Excel, Google Sheets</div>
-        </button>
-        <button
-          onClick={() => setFormat('xlsx')}
-          className={`bg-white border rounded-xl p-5 text-left transition-all opacity-50 cursor-not-allowed`}
-          disabled
-        >
-          <FileSpreadsheet className="text-lg mb-2.5" />
-          <div className="font-bold text-sm">Excel (XLSX)</div>
-          <div className="text-xs text-[var(--text-muted)] mt-1">Bientôt disponible</div>
-        </button>
+      <div className="grid grid-cols-2 gap-3 mb-7">
+        {formats.map(({ key, label, desc, icon, disabled }) => {
+          const isActive = !disabled && format === key;
+          return (
+            <button
+              key={key}
+              onClick={() => !disabled && setFormat(key as ExportFormat)}
+              disabled={disabled}
+              className="rounded-xl p-5 text-left transition-all"
+              style={{
+                background: 'var(--bg-elevated)',
+                border: isActive ? '2px solid var(--accent)' : '1px solid var(--border)',
+                opacity: disabled ? 0.4 : 1,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <div className="mb-2.5" style={{ color: isActive ? 'var(--accent)' : 'var(--text-muted)' }}>{icon}</div>
+              <div className="font-bold text-sm mb-1">{label}</div>
+              <div className="text-xs" style={{ color: 'var(--text-dim)' }}>{desc}</div>
+            </button>
+          );
+        })}
       </div>
 
       {/* Options */}
-      <div className="bg-white border border-[var(--border)] rounded-xl p-5 mb-6">
-        <div className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] mb-3.5">Options</div>
+      <div className="rounded-xl p-5 mb-5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+        <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Options</div>
         <div className="space-y-3">
-          <label className="flex items-center gap-2.5 text-sm cursor-pointer">
-            <input type="checkbox" checked={includeTNR} onChange={(e) => setIncludeTNR(e.target.checked)} className="accent-[var(--primary)] w-4 h-4" />
-            <span>Inclure les scénarios TNR</span>
-          </label>
-          <label className="flex items-center gap-2.5 text-sm cursor-pointer">
-            <input type="checkbox" checked={includeUnaccepted} onChange={(e) => setIncludeUnaccepted(e.target.checked)} className="accent-[var(--primary)] w-4 h-4" />
-            <span>Inclure les scénarios non acceptés</span>
-          </label>
+          {[
+            { checked: includeTNR,          onChange: setIncludeTNR,          label: 'Inclure les scénarios TNR' },
+            { checked: includeUnaccepted,   onChange: setIncludeUnaccepted,   label: 'Inclure les scénarios non acceptés' },
+          ].map(({ checked, onChange, label }) => (
+            <label key={label} className="flex items-center gap-2.5 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(e) => onChange(e.target.checked)}
+                className="w-4 h-4"
+                style={{ accentColor: 'var(--accent)' }}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
         </div>
       </div>
 
       {/* Stats */}
-      <div className="bg-white border border-[var(--border)] rounded-xl p-5 mb-6">
-        <div className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] mb-3.5">Aperçu</div>
+      <div className="rounded-xl p-5 mb-6" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+        <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Aperçu</div>
         <div className="text-sm">
-          <span className="font-bold text-[var(--primary)]">{filtered.length}</span> scénario(s) prêt(s) à être exporté(s)
-          {scenarios.length !== filtered.length && <span className="text-[var(--text-muted)]"> (sur {scenarios.length} total)</span>}
+          <span className="font-bold" style={{ color: 'var(--accent)' }}>{filtered.length}</span>
+          <span> scénario(s) prêt(s) à être exporté(s)</span>
+          {scenarios.length !== filtered.length && (
+            <span style={{ color: 'var(--text-muted)' }}> (sur {scenarios.length} total)</span>
+          )}
         </div>
-        <div className="text-xs text-[var(--text-muted)] mt-2">
+        <div className="text-xs mt-1.5" style={{ color: 'var(--text-dim)' }}>
           {acceptedCount} accepté(s) / {scenarios.length} total
         </div>
       </div>
 
       {/* Export Button */}
       <button
-        className="btn btn-primary flex items-center gap-2"
+        className="btn btn-primary"
         onClick={exportData}
         disabled={filtered.length === 0}
       >
-        <Download size={16} />
+        <Download size={15} />
         Exporter {filtered.length} scénario(s)
       </button>
     </div>

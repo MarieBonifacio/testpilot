@@ -26,10 +26,6 @@ export interface Scenario {
   accepted?: boolean;
   is_tnr?: boolean;
   created_at?: string;
-  // Legacy properties for parsing
-  given?: string;
-  when?: string;
-  then?: string;
 }
 
 export interface Analysis {
