@@ -38,11 +38,21 @@
         h1::before { content: ''; font-size: 1.5rem; }
         .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 5px; }
 
-        /* API config */
-        .api-config { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 20px; }
-        .api-config label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.9rem; }
-        .api-config input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: monospace; }
-        .api-config input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(59,109,17,0.2); }
+        /* Provider config */
+        .provider-config { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+        .provider-config > label { display: block; font-weight: 600; margin-bottom: 10px; font-size: 0.9rem; }
+        .provider-selector { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+        .provider-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; color: var(--text-muted); display:flex; align-items:center; gap:5px; }
+        .provider-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .provider-btn.active { border-color: var(--primary); background: rgba(59,109,17,0.08); color: var(--primary); }
+        .pvdr-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink:0; }
+        .provider-btn.active .pvdr-dot { background: var(--primary); }
+        .provider-fields { display: grid; gap: 10px; }
+        .provider-fields input, .provider-fields select { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: monospace; background: white; color: var(--text); }
+        .provider-fields input:focus, .provider-fields select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(59,109,17,0.2); }
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .field-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+        .offline-badge { display: inline-block; background: #d4edda; color: #155724; font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 4px; vertical-align: middle; }
 
         /* Input section */
         .input-section { margin-bottom: 20px; }
@@ -178,9 +188,17 @@
         <p class="subtitle">Générateur de scénarios de tests assisté par IA</p>
     </header>
 
-    <div class="api-config">
-        <label for="apiKey">Clé API Anthropic</label>
-        <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off">
+    <div class="provider-config">
+        <label>Modèle IA</label>
+        <div class="provider-selector">
+            <button class="provider-btn active" onclick="setProvider('anthropic', this)"><span class="pvdr-dot"></span>Anthropic Claude</button>
+            <button class="provider-btn" onclick="setProvider('openai', this)"><span class="pvdr-dot"></span>OpenAI / Azure</button>
+            <button class="provider-btn" onclick="setProvider('mistral', this)"><span class="pvdr-dot"></span>Mistral AI</button>
+            <button class="provider-btn" onclick="setProvider('ollama', this)"><span class="pvdr-dot"></span>Ollama <span class="offline-badge">offline</span></button>
+        </div>
+        <div class="provider-fields" id="providerFields">
+            <!-- Rendu dynamique par renderProviderFields() -->
+        </div>
     </div>
 
     <div class="input-section">
@@ -252,223 +270,165 @@
 </div>
 
 <script>
-const STORAGE_KEY = 'testpilot_scenarios';
+const STORAGE_KEY  = 'testpilot_scenarios';
 const ANALYSIS_KEY = 'testpilot_analysis';
-const API_KEY_STORAGE = 'testpilot_api_key';
+const PROVIDER_KEY = 'testpilot_provider';
 
 const state = { scenarios: [], analysis: null };
 
-const el = {
-    apiKey:        document.getElementById('apiKey'),
-    sourceInput:   document.getElementById('sourceInput'),
-    sourceType:    document.getElementsByName('sourceType'),
-    generateBtn:   document.getElementById('generateBtn'),
-    acceptAllBtn:  document.getElementById('acceptAllBtn'),
-    exportBtn:     document.getElementById('exportBtn'),
-    clearBtn:      document.getElementById('clearBtn'),
-    loader:        document.getElementById('loader'),
-    errorMessage:  document.getElementById('errorMessage'),
-    resultsHeader: document.getElementById('resultsHeader'),
-    stats:         document.getElementById('stats'),
-    scenariosGrid: document.getElementById('scenariosGrid'),
-    emptyState:    document.getElementById('emptyState'),
-    analysisBlock: document.getElementById('analysisBlock'),
-    aFeature:      document.getElementById('aFeature'),
-    aComplexity:   document.getElementById('aComplexity'),
-    aAmbigCount:   document.getElementById('aAmbigCount'),
-    ambigCallout:  document.getElementById('ambigCallout'),
-    ambigList:     document.getElementById('ambigList'),
-    regrCallout:   document.getElementById('regrCallout'),
-    regrList:      document.getElementById('regrList'),
+// ── Provider config ───────────────────────────────────
+const PROVIDERS = {
+    anthropic: {
+        label: 'Anthropic Claude', needsKey: true,
+        endpoint: 'https://api.anthropic.com/v1/messages',
+        keyPlaceholder: 'sk-ant-api03-...',
+        models: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514'],
+    },
+    openai: {
+        label: 'OpenAI / Azure', needsKey: true, endpointEditable: true,
+        endpoint: 'https://api.openai.com/v1/chat/completions',
+        keyPlaceholder: 'sk-...',
+        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+    },
+    mistral: {
+        label: 'Mistral AI', needsKey: true,
+        endpoint: 'https://api.mistral.ai/v1/chat/completions',
+        keyPlaceholder: 'Clé API Mistral...',
+        models: ['mistral-large-latest', 'mistral-small-latest', 'open-mistral-nemo'],
+    },
+    ollama: {
+        label: 'Ollama (local)', needsKey: false, endpointEditable: true, offline: true,
+        endpoint: 'http://localhost:11434/v1/chat/completions',
+        keyPlaceholder: '',
+        models: ['llama3.2', 'mistral', 'qwen2.5-coder', 'phi4', 'deepseek-r1'],
+    },
 };
 
-// ── Storage ──────────────────────────────────────────
-function loadFromStorage() {
-    try { state.scenarios = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { state.scenarios = []; }
-    try { state.analysis  = JSON.parse(localStorage.getItem(ANALYSIS_KEY)) || null; } catch { state.analysis = null; }
-    const savedKey = localStorage.getItem(API_KEY_STORAGE);
-    if (savedKey) el.apiKey.value = savedKey;
-    if (state.analysis) renderAnalysis(state.analysis);
-    renderScenarios();
-    updateNavBadge();
-}
+let currentProvider  = 'anthropic';
+let providerSettings = {};
 
-function saveToStorage() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.scenarios));
-    if (state.analysis) localStorage.setItem(ANALYSIS_KEY, JSON.stringify(state.analysis));
-    if (el.apiKey.value) localStorage.setItem(API_KEY_STORAGE, el.apiKey.value);
-}
-
-// ── UI helpers ────────────────────────────────────────
-function showError(msg) { el.errorMessage.textContent = msg; el.errorMessage.classList.add('active'); }
-function hideError()    { el.errorMessage.classList.remove('active'); }
-function showLoader()   { el.loader.classList.add('active'); el.generateBtn.disabled = true; }
-function hideLoader()   { el.loader.classList.remove('active'); el.generateBtn.disabled = false; }
-function esc(t)         { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
-function getType()      { for (const r of el.sourceType) if (r.checked) return r.value; return 'user-story'; }
-
-function updateNavBadge() {
-    const badge = document.getElementById('navCampagneBadge');
-    if (!badge) return;
-    const count = state.scenarios.filter(s => s.accepted).length;
-    if (count > 0) { badge.textContent = count; badge.style.display = 'inline-block'; }
-    else { badge.style.display = 'none'; }
-}
-
-// ── Analysis render ───────────────────────────────────
-function renderAnalysis(a) {
-    el.analysisBlock.classList.add('active');
-    el.aFeature.textContent = a.feature || '—';
-
-    const cx = (a.complexity || 'simple').toLowerCase();
-    el.aComplexity.innerHTML = `<span class="complexity-badge complexity-${cx}">${cx}</span>`;
-
-    const ambigs = a.ambiguities || [];
-    el.aAmbigCount.textContent = ambigs.length === 0 ? 'Aucune' : `${ambigs.length} détectée${ambigs.length > 1 ? 's' : ''}`;
-
-    if (ambigs.length > 0) {
-        el.ambigCallout.classList.add('active');
-        el.ambigList.innerHTML = ambigs.map(a => `<li>${esc(a)}</li>`).join('');
-    } else {
-        el.ambigCallout.classList.remove('active');
-    }
-
-    const regrs = a.regressionRisks || [];
-    if (regrs.length > 0) {
-        el.regrCallout.classList.add('active');
-        el.regrList.innerHTML = regrs.map(r => `<li>${esc(r)}</li>`).join('');
-    } else {
-        el.regrCallout.classList.remove('active');
+function loadProviderSettings() {
+    try { providerSettings = JSON.parse(localStorage.getItem(PROVIDER_KEY)) || {}; } catch { providerSettings = {}; }
+    for (const [id, cfg] of Object.entries(PROVIDERS)) {
+        if (!providerSettings[id]) providerSettings[id] = { key: '', model: cfg.models[0], endpoint: cfg.endpoint };
     }
 }
 
-// ── Scenario render ───────────────────────────────────
-function renderScenarios() {
-    const accepted = state.scenarios.filter(s => s.accepted).length;
-    const total    = state.scenarios.length;
+function saveProviderSettings() {
+    localStorage.setItem(PROVIDER_KEY, JSON.stringify(providerSettings));
+}
 
-    el.resultsHeader.style.display = total > 0 ? 'flex' : 'none';
-    el.stats.textContent = `${accepted} accepté${accepted > 1 ? 's' : ''} / ${total} total`;
+function setProvider(id, btn) {
+    currentProvider = id;
+    document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderProviderFields();
+}
 
-    // FIX : disabled si 0 scénarios OU si tous déjà acceptés
-    el.acceptAllBtn.disabled = total === 0 || accepted === total;
-    el.exportBtn.disabled    = accepted === 0;
+function renderProviderFields() {
+    const cfg = PROVIDERS[currentProvider];
+    const s   = providerSettings[currentProvider] || {};
+    const fld = document.getElementById('providerFields');
+    if (!fld) return;
+    const modelOpts = cfg.models.map(m =>
+        `<option value="${m}" ${(s.model||cfg.models[0])===m?'selected':''}>${m}</option>`
+    ).join('') + '<option value="__custom__">Autre (saisir)...</option>';
 
-    if (total === 0) {
-        el.emptyState.style.display = 'block';
-        el.scenariosGrid.innerHTML = '';
-        return;
-    }
-    el.emptyState.style.display = 'none';
-
-    el.scenariosGrid.innerHTML = state.scenarios.map((sc, i) => `
-        <div class="scenario-card ${sc.accepted ? 'accepted' : ''}" id="card-${i}">
-            <div class="card-header">
-                <div>
-                    <div class="card-id">${esc(sc.id || ('SC-' + String(i+1).padStart(3,'0')))}</div>
-                    <div class="card-title">${esc(sc.title)}</div>
-                </div>
-                <div class="badges">
-                    <span class="badge badge-type ${esc(sc.type)}">${esc(sc.type)}</span>
-                    <span class="badge badge-priority ${esc(sc.priority)}">${esc(sc.priority)}</span>
-                </div>
-            </div>
-            <div class="gwt-block"><div class="gwt-label">Given</div><div class="gwt-text">${esc(sc.given)}</div></div>
-            <div class="gwt-block"><div class="gwt-label">When</div><div class="gwt-text">${esc(sc.when)}</div></div>
-            <div class="gwt-block"><div class="gwt-label">Then</div><div class="gwt-text">${esc(sc.then)}</div></div>
-            <div class="card-actions">
-                <button class="btn-sm ${sc.accepted ? 'btn-secondary' : 'btn-success'}" onclick="toggleAccept(${i})">
-                    ${sc.accepted ? '✓ Accepté — Retirer' : 'Accepter'}
-                </button>
-                <button class="btn-sm btn-secondary" onclick="toggleEdit(${i})">Modifier</button>
-                <button class="btn-sm btn-danger" onclick="deleteSc(${i})">Supprimer</button>
-            </div>
-            <div class="edit-form" id="edit-${i}">
-                <label>Titre</label>
-                <input type="text" id="ef-title-${i}" value="${esc(sc.title)}">
-                <label>Given</label>
-                <textarea id="ef-given-${i}">${esc(sc.given)}</textarea>
-                <label>When</label>
-                <textarea id="ef-when-${i}">${esc(sc.when)}</textarea>
-                <label>Then</label>
-                <textarea id="ef-then-${i}">${esc(sc.then)}</textarea>
-                <label>Priorité</label>
-                <select id="ef-prio-${i}">
-                    <option value="high"   ${sc.priority==='high'   ? 'selected':''}>High — critique</option>
-                    <option value="medium" ${sc.priority==='medium' ? 'selected':''}>Medium — normale</option>
-                    <option value="low"    ${sc.priority==='low'    ? 'selected':''}>Low — basse</option>
+    fld.innerHTML = `
+        ${cfg.needsKey ? `<div>
+            <div class="field-label">Clé API</div>
+            <input type="password" id="pvdrKey" placeholder="${cfg.keyPlaceholder}" value="${s.key||''}"
+                   oninput="providerSettings[currentProvider].key=this.value;saveProviderSettings()">
+        </div>` : `<div style="font-size:0.85rem;color:var(--success);padding:4px 0;">✓ Aucune clé requise — ${cfg.offline?'100% local, zéro donnée externe':'mode local'}</div>`}
+        <div class="field-row">
+            <div>
+                <div class="field-label">Modèle</div>
+                <select id="pvdrModel" onchange="onModelChange(this)">
+                    ${modelOpts}
                 </select>
-                <div class="edit-form-actions">
-                    <button class="btn-sm btn-primary" onclick="saveEdit(${i})">Enregistrer</button>
-                    <button class="btn-sm btn-secondary" onclick="toggleEdit(${i})">Annuler</button>
-                </div>
+                <input type="text" id="pvdrModelCustom" placeholder="ex : llama3.2:latest"
+                       style="display:${s.model==='__custom__'?'block':'none'};margin-top:6px;"
+                       value="${s.model==='__custom__'?(s.modelCustom||''):''}"
+                       oninput="providerSettings[currentProvider].modelCustom=this.value;saveProviderSettings()">
             </div>
+            ${cfg.endpointEditable ? `<div>
+                <div class="field-label">Endpoint URL</div>
+                <input type="text" id="pvdrEndpoint" value="${s.endpoint||cfg.endpoint}"
+                       oninput="providerSettings[currentProvider].endpoint=this.value;saveProviderSettings()">
+            </div>` : '<div></div>'}
         </div>
-    `).join('');
-    updateNavBadge();
+        ${cfg.offline ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">
+            Ollama doit tourner localement —
+            <a href="https://ollama.ai" target="_blank" style="color:var(--primary);">ollama.ai</a>
+            puis <code style="background:var(--bg-alt);padding:1px 4px;border-radius:3px;">ollama serve</code>
+        </div>` : ''}`;
 }
 
-// ── API ────────────────────────────────────────────────
-function buildPrompt(type, text) {
-    const labels = { 'user-story': 'User Story', spec: 'Spécification fonctionnelle', oral: 'Description orale', rule: 'Règle de gestion' };
-    return `Tu es un expert QA senior. Analyse la source suivante et génère des scénarios de tests structurés.
+function onModelChange(sel) {
+    providerSettings[currentProvider].model = sel.value;
+    const custom = document.getElementById('pvdrModelCustom');
+    if (custom) custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
+    saveProviderSettings();
+}
 
-SOURCE (type: ${labels[type]}) :
-${text}
+function getActiveModel() {
+    const s = providerSettings[currentProvider];
+    if (s.model === '__custom__') return s.modelCustom || '';
+    return s.model || PROVIDERS[currentProvider].models[0];
+}
 
-Réponds UNIQUEMENT avec un JSON valide, sans markdown, sans backticks.
-{
-  "feature": "string — feature principale testée, max 5 mots",
-  "complexity": "simple | moyenne | complexe",
-  "ambiguities": ["string — précondition manquante ou ambiguë"],
-  "regressionRisks": ["string — risque de régression sur feature adjacente"],
-  "scenarios": [
-    {
-      "id": "SC-001",
-      "type": "functional | negative | edge-case | boundary",
-      "priority": "high | medium | low",
-      "title": "string",
-      "given": "string",
-      "when": "string",
-      "then": "string"
+// ── LLM abstraction layer ─────────────────────────────
+async function callLLM(prompt) {
+    const provider = PROVIDERS[currentProvider];
+    const s        = providerSettings[currentProvider];
+    const model    = getActiveModel();
+    const endpoint = s.endpoint || provider.endpoint;
+
+    if (provider.needsKey && !s.key) {
+        throw new Error(`Clé API ${provider.label} manquante.`);
     }
-  ]
-}
-Génère entre 3 et 8 scénarios. Inclus obligatoirement : au moins 1 cas nominal, 1 cas négatif, 1 edge-case.`;
+    if (!model) throw new Error('Aucun modèle sélectionné.');
+
+    // ── Anthropic (format propriétaire) ──────────────
+    if (currentProvider === 'anthropic') {
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': s.key,
+                'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({ model, max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }),
+        });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message || `Erreur Anthropic ${res.status}`); }
+        const data = await res.json();
+        return data.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    }
+
+    // ── OpenAI / Mistral / Ollama (format OpenAI Chat) ─
+    const headers = { 'Content-Type': 'application/json' };
+    if (provider.needsKey) headers['Authorization'] = `Bearer ${s.key}`;
+
+    const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2 }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message || `Erreur ${provider.label} ${res.status}`); }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || '';
 }
 
 async function generate() {
     hideError();
     const text = el.sourceInput.value.trim();
     if (!text) { showError('Veuillez entrer une description.'); return; }
-    const key = el.apiKey.value.trim();
-    if (!key)  { showError('Veuillez entrer votre clé API Anthropic.'); return; }
 
     showLoader();
     try {
-        const res = await fetch('/api/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': key,
-                'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1500,
-                messages: [{ role: 'user', content: buildPrompt(getType(), text) }]
-            })
-        });
-
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error?.message || `Erreur API : ${res.status}`);
-        }
-
-        const data = await res.json();
-        const raw  = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
-        const match = raw.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('Réponse IA invalide — JSON non trouvé.');
+        const raw    = await callLLM(buildPrompt(getType(), text));
+        const match  = raw.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error('Réponse IA invalide — JSON non trouvé. Essaie un modèle plus capable.');
         const parsed = JSON.parse(match[0]);
         if (!Array.isArray(parsed.scenarios)) throw new Error('Format invalide — scénarios manquants.');
 
@@ -535,9 +495,15 @@ el.generateBtn.addEventListener('click', generate);
 el.acceptAllBtn.addEventListener('click', acceptAll);
 el.exportBtn.addEventListener('click', exportJSON);
 el.clearBtn.addEventListener('click', clearAll);
-el.apiKey.addEventListener('input', () => localStorage.setItem(API_KEY_STORAGE, el.apiKey.value));
 
-loadFromStorage();
+// Init
+loadProviderSettings();
+renderProviderFields();
+try { state.scenarios = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { state.scenarios = []; }
+try { state.analysis  = JSON.parse(localStorage.getItem(ANALYSIS_KEY)) || null; } catch { state.analysis = null; }
+if (state.analysis) renderAnalysis(state.analysis);
+renderScenarios();
+updateNavBadge();
 </script>
 </body>
 </html>
