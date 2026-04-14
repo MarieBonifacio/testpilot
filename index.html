@@ -1,509 +1,693 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TestPilot - Générateur de Scénarios de Tests</title>
-    <style>
-        :root {
-            --primary: #3B6D11;
-            --primary-light: #4a8a1a;
-            --primary-dark: #2d5309;
-            --bg: #ffffff;
-            --bg-alt: #f8f9fa;
-            --text: #212529;
-            --text-muted: #6c757d;
-            --border: #dee2e6;
-            --danger: #dc3545;
-            --success: #28a745;
-            --warning: #ffc107;
-            --purple: #534AB7;
-            --purple-light: #EEEDFE;
-            --amber: #EF9F27;
-            --amber-light: #FAEEDA;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
-        .nav { background: white; border-bottom: 2px solid var(--primary); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 100; }
-        .nav-brand { color: var(--primary); font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; text-decoration: none; }
-        .nav-brand::before { content: '✈'; }
-        .nav-links { display: flex; gap: 4px; }
-        .nav-link { padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; text-decoration: none; color: var(--text-muted); transition: all .15s; }
-        .nav-link:hover { background: var(--bg-alt); color: var(--text); }
-        .nav-link.active { background: rgba(59,109,17,0.1); color: var(--primary); }
-        .nav-badge { display: inline-block; background: var(--primary); color: white; font-size: 0.65rem; font-weight: 700; padding: 1px 6px; border-radius: 20px; margin-left: 5px; vertical-align: middle; }
-        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
-        header { padding-top: 24px; padding-bottom: 20px; margin-bottom: 30px; }
-        h1 { color: var(--primary); font-size: 1.8rem; display: flex; align-items: center; gap: 10px; }
-        h1::before { content: ''; font-size: 1.5rem; }
-        .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 5px; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TestPilot — Rédaction</title>
+<style>
+:root {
+  --primary:#3B6D11; --primary-light:#4a8a1a; --primary-dark:#2d5309;
+  --bg:#ffffff; --bg-alt:#f8f9fa; --text:#212529; --text-muted:#6c757d;
+  --border:#dee2e6; --danger:#dc3545; --success:#28a745; --warning:#e8a020;
+  --purple:#534AB7; --purple-light:#EEEDFE; --amber:#EF9F27; --amber-light:#FAEEDA;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
 
-        /* Provider config */
-        .provider-config { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 20px; }
-        .provider-config > label { display: block; font-weight: 600; margin-bottom: 10px; font-size: 0.9rem; }
-        .provider-selector { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-        .provider-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: 6px; background: white; font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; color: var(--text-muted); display:flex; align-items:center; gap:5px; }
-        .provider-btn:hover { border-color: var(--primary); color: var(--primary); }
-        .provider-btn.active { border-color: var(--primary); background: rgba(59,109,17,0.08); color: var(--primary); }
-        .pvdr-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink:0; }
-        .provider-btn.active .pvdr-dot { background: var(--primary); }
-        .provider-fields { display: grid; gap: 10px; }
-        .provider-fields input, .provider-fields select { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: monospace; background: white; color: var(--text); }
-        .provider-fields input:focus, .provider-fields select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(59,109,17,0.2); }
-        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .field-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
-        .offline-badge { display: inline-block; background: #d4edda; color: #155724; font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 4px; vertical-align: middle; }
+/* Nav */
+.nav{background:white;border-bottom:2px solid var(--primary);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100}
+.nav-brand{color:var(--primary);font-size:1.2rem;font-weight:700;display:flex;align-items:center;gap:8px;text-decoration:none}
+.nav-brand::before{content:'✈'}
+.nav-links{display:flex;gap:4px}
+.nav-link{padding:8px 16px;border-radius:6px;font-size:.9rem;font-weight:500;text-decoration:none;color:var(--text-muted);transition:all .15s}
+.nav-link:hover{background:var(--bg-alt);color:var(--text)}
+.nav-link.active{background:rgba(59,109,17,.1);color:var(--primary)}
+.nav-badge{display:inline-block;background:var(--primary);color:white;font-size:.65rem;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px;vertical-align:middle}
 
-        /* Input section */
-        .input-section { margin-bottom: 20px; }
-        .input-section > label { display: block; font-weight: 600; margin-bottom: 8px; }
-        .type-selector { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-        .type-selector label { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: all 0.2s; font-weight: normal; font-size: 0.9rem; }
-        .type-selector input { display: none; }
-        .type-selector label:has(input:checked) { border-color: var(--primary); background: rgba(59,109,17,0.08); color: var(--primary); }
-        .type-selector label:hover { border-color: var(--primary-light); }
-        textarea { width: 100%; min-height: 150px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; resize: vertical; font-family: inherit; }
-        textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(59,109,17,0.2); }
+.container{max-width:1000px;margin:0 auto;padding:20px}
+header{padding-top:24px;padding-bottom:16px;margin-bottom:24px;border-bottom:1px solid var(--border)}
+h1{color:var(--primary);font-size:1.6rem;font-weight:700}
+.subtitle{color:var(--text-muted);font-size:.9rem;margin-top:4px}
 
-        /* Buttons */
-        .actions { display: flex; gap: 12px; margin-bottom: 30px; flex-wrap: wrap; }
-        button { padding: 12px 24px; border: none; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { background: white; border: 1px solid var(--border); color: var(--text); }
-        .btn-secondary:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
-        .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-success { background: var(--success); color: white; }
-        .btn-success:hover:not(:disabled) { background: #218838; }
-        .btn-success:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-danger { background: var(--danger); color: white; }
-        .btn-danger:hover { background: #c82333; }
-        .btn-sm { padding: 6px 12px; font-size: 0.85rem; }
+/* Section titles */
+.section-label{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:10px}
 
-        /* Loader */
-        .loader { display: none; align-items: center; gap: 10px; color: var(--text-muted); padding: 20px; }
-        .loader.active { display: flex; }
-        .spinner { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+/* Provider config */
+.panel{background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px}
+.provider-selector{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.provider-btn{padding:7px 14px;border:1px solid var(--border);border-radius:6px;background:white;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;color:var(--text-muted);display:flex;align-items:center;gap:6px}
+.provider-btn:hover{border-color:var(--primary);color:var(--primary)}
+.provider-btn.active{border-color:var(--primary);background:rgba(59,109,17,.08);color:var(--primary)}
+.pvdr-dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0}
+.provider-btn.active .pvdr-dot{background:var(--primary)}
+.provider-fields{display:grid;gap:10px}
+.field-label{font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:4px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.offline-badge{background:#d4edda;color:#155724;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:20px}
+input[type=text],input[type=password],select,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;font-size:.9rem;font-family:inherit;background:white;color:var(--text)}
+input[type=text]:focus,input[type=password]:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(59,109,17,.15)}
 
-        /* Error */
-        .error-message { display: none; background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; }
-        .error-message.active { display: block; }
+/* Context projet */
+.context-toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.context-toggle-label{font-size:.85rem;font-weight:600;color:var(--text-muted)}
+.context-chevron{font-size:.75rem;color:var(--text-muted);transition:transform .2s}
+.context-chevron.open{transform:rotate(90deg)}
+.context-fields{display:none;margin-top:12px;display:grid;gap:10px}
+.context-fields.visible{display:grid}
 
-        /* Analysis block */
-        .analysis-block { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; display: none; }
-        .analysis-block.active { display: block; }
-        .analysis-title { font-weight: 700; font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 12px; }
-        .analysis-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
-        .analysis-metric { background: white; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
-        .analysis-metric-label { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
-        .analysis-metric-value { font-size: 0.95rem; font-weight: 600; color: var(--primary); }
-        .complexity-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
-        .complexity-simple { background: #d4edda; color: #155724; }
-        .complexity-moyenne { background: #fff3cd; color: #856404; }
-        .complexity-complexe { background: #f8d7da; color: #721c24; }
+/* Type selector */
+.type-selector{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.type-selector label{display:flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--border);border-radius:6px;cursor:pointer;transition:all .2s;font-size:.9rem;font-weight:500;color:var(--text-muted)}
+.type-selector input{display:none}
+.type-selector label:has(input:checked){border-color:var(--primary);background:rgba(59,109,17,.08);color:var(--primary)}
+textarea.source-input{min-height:140px;resize:vertical}
 
-        /* Ambiguities callout */
-        .callout-amber { background: var(--amber-light); border-left: 4px solid var(--amber); border-radius: 0 6px 6px 0; padding: 10px 14px; margin-top: 10px; display: none; }
-        .callout-amber.active { display: block; }
-        .callout-amber-title { font-size: 0.8rem; font-weight: 700; color: #854F0B; margin-bottom: 6px; }
-        .callout-amber ul { margin: 0; padding-left: 18px; font-size: 0.85rem; color: #633806; }
+/* Buttons */
+.actions{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap}
+button{padding:10px 20px;border:none;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn-primary{background:var(--primary);color:white}
+.btn-primary:hover:not(:disabled){background:var(--primary-dark)}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed}
+.btn-success{background:var(--success);color:white}
+.btn-success:hover:not(:disabled){background:#218838}
+.btn-success:disabled{opacity:.4;cursor:not-allowed}
+.btn-secondary{background:white;border:1px solid var(--border);color:var(--text)}
+.btn-secondary:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.btn-secondary:disabled{opacity:.4;cursor:not-allowed}
+.btn-danger{background:var(--danger);color:white}
+.btn-danger:hover{background:#c82333}
+.btn-sm{padding:5px 12px;font-size:.82rem}
 
-        /* Regression callout */
-        .callout-purple { background: var(--purple-light); border-left: 4px solid var(--purple); border-radius: 0 6px 6px 0; padding: 10px 14px; margin-top: 10px; display: none; }
-        .callout-purple.active { display: block; }
-        .callout-purple-title { font-size: 0.8rem; font-weight: 700; color: #3C3489; margin-bottom: 6px; }
-        .callout-purple ul { margin: 0; padding-left: 18px; font-size: 0.85rem; color: #534AB7; }
+/* Loader */
+.loader{display:none;align-items:center;gap:10px;color:var(--text-muted);padding:16px 0}
+.loader.active{display:flex}
+.spinner{width:22px;height:22px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-        /* Results */
-        .results { margin-top: 30px; }
-        .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
-        .results-header h2 { color: var(--text); font-size: 1.2rem; }
-        .stats { font-size: 0.9rem; color: var(--text-muted); }
-        .scenarios-grid { display: grid; gap: 16px; }
+/* Error */
+.error-msg{display:none;background:#f8d7da;border:1px solid #f5c6cb;color:#721c24;padding:11px 16px;border-radius:6px;margin-bottom:16px;font-size:.9rem}
+.error-msg.active{display:block}
 
-        /* Scenario card */
-        .scenario-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: white; transition: box-shadow 0.2s; }
-        .scenario-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-        .scenario-card.accepted { border-left: 4px solid var(--success); }
-        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
-        .card-id { font-family: monospace; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
-        .card-title { font-weight: 600; font-size: 1rem; flex: 1; }
-        .badges { display: flex; gap: 6px; flex-wrap: wrap; }
-        .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-        .badge-type { background: var(--primary); color: white; }
-        .badge-type.negative { background: #dc3545; }
-        .badge-type.edge-case { background: #17a2b8; }
-        .badge-type.boundary { background: #6f42c1; }
-        .badge-type.functional { background: var(--primary); }
-        .badge-priority { background: var(--bg-alt); color: var(--text-muted); border: 1px solid var(--border); }
-        .badge-priority.high { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
-        .badge-priority.medium { background: #fff3cd; color: #856404; border-color: #ffeeba; }
-        .badge-priority.low { background: #d4edda; color: #155724; border-color: #c3e6cb; }
-        .gwt-block { margin-bottom: 10px; }
-        .gwt-label { font-weight: 600; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
-        .gwt-text { font-size: 0.9rem; color: var(--text); }
-        .card-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+/* Analysis */
+.analysis-block{background:var(--bg-alt);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;display:none}
+.analysis-block.active{display:block}
+.analysis-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+.analysis-metric{background:white;border:1px solid var(--border);border-radius:6px;padding:10px 14px}
+.am-label{font-size:.72rem;color:var(--text-muted);margin-bottom:4px}
+.am-value{font-size:.95rem;font-weight:600;color:var(--primary)}
+.complexity-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:.78rem;font-weight:600}
+.cx-simple{background:#d4edda;color:#155724}
+.cx-moyenne{background:#fff3cd;color:#856404}
+.cx-complexe{background:#f8d7da;color:#721c24}
+.callout{padding:10px 14px;margin-top:8px;display:none}
+.callout.active{display:block}
+.callout-amber{background:var(--amber-light);border-left:4px solid var(--amber)}
+.callout-purple{background:var(--purple-light);border-left:4px solid var(--purple)}
+.callout-title{font-size:.78rem;font-weight:700;margin-bottom:5px}
+.callout-amber .callout-title{color:#854F0B}
+.callout-purple .callout-title{color:#3C3489}
+.callout ul{margin:0;padding-left:18px;font-size:.83rem}
+.callout-amber ul{color:#633806}
+.callout-purple ul{color:var(--purple)}
 
-        /* Inline edit form */
-        .edit-form { display: none; margin-top: 12px; padding: 14px; background: var(--bg-alt); border-radius: 6px; }
-        .edit-form.active { display: block; }
-        .edit-form label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; margin-top: 10px; }
-        .edit-form label:first-child { margin-top: 0; }
-        .edit-form input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; }
-        .edit-form textarea { min-height: 60px; margin-bottom: 0; }
-        .edit-form select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; background: white; }
-        .edit-form-actions { display: flex; gap: 8px; margin-top: 12px; }
+/* Scenario cards */
+.results-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.results-header h2{font-size:1.1rem;font-weight:700}
+.stats{font-size:.85rem;color:var(--text-muted)}
+.scenarios-grid{display:grid;gap:14px}
+.scenario-card{border:1px solid var(--border);border-radius:8px;padding:16px;background:white;transition:box-shadow .15s}
+.scenario-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.07)}
+.scenario-card.accepted{border-left:4px solid var(--success)}
+.card-id{font-family:monospace;font-size:.72rem;color:var(--text-muted);margin-bottom:3px}
+.card-title{font-weight:600;font-size:.95rem;flex:1}
+.card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:10px;flex-wrap:wrap}
+.badges{display:flex;gap:5px;flex-wrap:wrap}
+.badge{padding:3px 9px;border-radius:20px;font-size:.7rem;font-weight:700;text-transform:uppercase}
+.badge-type{background:var(--primary);color:white}
+.badge-type.negative{background:#dc3545}
+.badge-type.edge-case{background:#17a2b8}
+.badge-type.boundary{background:var(--purple)}
+.badge-type.functional{background:var(--primary)}
+.badge-priority{background:var(--bg-alt);color:var(--text-muted);border:1px solid var(--border)}
+.badge-priority.high{background:#f8d7da;color:#721c24;border-color:#f5c6cb}
+.badge-priority.medium{background:#fff3cd;color:#856404;border-color:#ffeeba}
+.badge-priority.low{background:#d4edda;color:#155724;border-color:#c3e6cb}
+.gwt-block{margin-bottom:8px}
+.gwt-label{font-weight:700;font-size:.72rem;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px}
+.gwt-text{font-size:.88rem;color:var(--text)}
+.card-actions{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);flex-wrap:wrap}
+.edit-form{display:none;margin-top:12px;padding:14px;background:var(--bg-alt);border-radius:6px}
+.edit-form.active{display:block}
+.edit-form label{display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:4px;margin-top:10px}
+.edit-form label:first-child{margin-top:0}
+.edit-form textarea{min-height:56px}
+.edit-form-actions{display:flex;gap:8px;margin-top:10px}
 
-        /* Empty state */
-        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
-        .empty-state p { margin-bottom: 10px; }
+.empty-state{text-align:center;padding:40px 20px;color:var(--text-muted)}
+.empty-state p{margin-bottom:8px}
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);text-align:center;color:var(--text-muted);font-size:.82rem}
 
-        footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); text-align: center; color: var(--text-muted); font-size: 0.85rem; }
-
-        @media (max-width: 600px) {
-            .container { padding: 15px; }
-            .actions { flex-direction: column; }
-            .actions button { width: 100%; }
-            .analysis-grid { grid-template-columns: 1fr; }
-            .card-header { flex-direction: column; }
-            .badges { width: 100%; }
-        }
-    </style>
+@media(max-width:600px){
+  .container{padding:14px}
+  .actions{flex-direction:column}
+  .analysis-grid{grid-template-columns:1fr}
+  .field-row{grid-template-columns:1fr}
+  .nav-links{display:none}
+}
+</style>
 </head>
 <body>
+
 <nav class="nav">
-    <a class="nav-brand" href="index.html">TestPilot</a>
-    <div class="nav-links" id="navLinks">
-        <a class="nav-link active" href="index.html">Rédaction</a>
-        <a class="nav-link" href="dashboard.html">Dashboard</a>
-        <a class="nav-link" href="campagne.html">Campagne <span class="nav-badge" id="navCampagneBadge" style="display:none">0</span></a>
-    </div>
+  <a class="nav-brand" href="index.html">TestPilot</a>
+  <div class="nav-links">
+    <a class="nav-link active" href="index.html">Rédaction</a>
+    <a class="nav-link" href="dashboard.html">Dashboard</a>
+    <a class="nav-link" href="campagne.html">Campagne <span class="nav-badge" id="navBadge" style="display:none">0</span></a>
+    <a class="nav-link" href="export.html">Export</a>
+  </div>
 </nav>
 
 <div class="container">
-    <header>
-        <h1>TestPilot</h1>
-        <p class="subtitle">Générateur de scénarios de tests assisté par IA</p>
-    </header>
+  <header>
+    <h1>TestPilot</h1>
+    <p class="subtitle">Générateur de scénarios de tests assisté par IA</p>
+  </header>
 
-    <div class="provider-config">
-        <label>Modèle IA</label>
-        <div class="provider-selector">
-            <button class="provider-btn active" onclick="setProvider('anthropic', this)"><span class="pvdr-dot"></span>Anthropic Claude</button>
-            <button class="provider-btn" onclick="setProvider('openai', this)"><span class="pvdr-dot"></span>OpenAI / Azure</button>
-            <button class="provider-btn" onclick="setProvider('mistral', this)"><span class="pvdr-dot"></span>Mistral AI</button>
-            <button class="provider-btn" onclick="setProvider('ollama', this)"><span class="pvdr-dot"></span>Ollama <span class="offline-badge">offline</span></button>
-        </div>
-        <div class="provider-fields" id="providerFields">
-            <!-- Rendu dynamique par renderProviderFields() -->
-        </div>
+  <!-- Provider -->
+  <div class="panel">
+    <div class="section-label" style="margin-bottom:12px">Modèle IA</div>
+    <div class="provider-selector">
+      <button class="provider-btn active" onclick="setProvider('anthropic',this)"><span class="pvdr-dot"></span>Anthropic Claude</button>
+      <button class="provider-btn" onclick="setProvider('openai',this)"><span class="pvdr-dot"></span>OpenAI / Azure</button>
+      <button class="provider-btn" onclick="setProvider('mistral',this)"><span class="pvdr-dot"></span>Mistral AI</button>
+      <button class="provider-btn" onclick="setProvider('ollama',this)"><span class="pvdr-dot"></span>Ollama <span class="offline-badge">offline</span></button>
     </div>
+    <div class="provider-fields" id="providerFields"></div>
+  </div>
 
-    <div class="input-section">
-        <label>Type de source</label>
-        <div class="type-selector">
-            <label><input type="radio" name="sourceType" value="user-story" checked><span>User Story</span></label>
-            <label><input type="radio" name="sourceType" value="spec"><span>Spécification</span></label>
-            <label><input type="radio" name="sourceType" value="oral"><span>Description orale</span></label>
-            <label><input type="radio" name="sourceType" value="rule"><span>Règle de gestion</span></label>
-        </div>
-        <label for="sourceInput">Description / Spécification</label>
-        <textarea id="sourceInput" placeholder="Décrivez votre fonctionnalité, scénario ou règle de gestion..."></textarea>
+  <!-- Contexte projet -->
+  <div class="panel">
+    <div class="context-toggle" onclick="toggleContext()">
+      <div class="section-label" style="margin-bottom:0">Contexte projet <span style="font-size:.75rem;color:var(--text-muted);font-weight:400">(améliore la qualité des scénarios)</span></div>
+      <span class="context-chevron" id="ctxChevron">▶</span>
     </div>
-
-    <div class="actions">
-        <button class="btn-primary" id="generateBtn">Générer les scénarios</button>
-        <button class="btn-success" id="acceptAllBtn" disabled>Tout accepter</button>
-        <button class="btn-secondary" id="exportBtn" disabled>Exporter JSON</button>
-        <button class="btn-secondary" id="clearBtn">Effacer tout</button>
+    <div class="context-fields" id="contextFields">
+      <div>
+        <div class="field-label">Nom du projet / mission</div>
+        <input type="text" id="ctxProject" placeholder="Ex : Carter-Cash — Recette ATHENA Q2 2026"
+               oninput="saveContext()">
+      </div>
+      <div class="field-row">
+        <div>
+          <div class="field-label">Stack / technologies</div>
+          <input type="text" id="ctxStack" placeholder="Ex : .NET 4.8, SQL Server, API REST"
+                 oninput="saveContext()">
+        </div>
+        <div>
+          <div class="field-label">Domaine métier</div>
+          <input type="text" id="ctxDomain" placeholder="Ex : e-commerce, encaissement, facturation"
+                 oninput="saveContext()">
+        </div>
+      </div>
+      <div>
+        <div class="field-label">Features adjacentes à risque de régression</div>
+        <input type="text" id="ctxAdjacent" placeholder="Ex : commandes, synchronisation offre, gestion retours"
+               oninput="saveContext()">
+      </div>
+      <div>
+        <div class="field-label">Contraintes ou règles globales</div>
+        <input type="text" id="ctxConstraints" placeholder="Ex : multi-pays (FR/IT/ES), RGPD, calcul TVA différencié"
+               oninput="saveContext()">
+      </div>
     </div>
+  </div>
 
-    <div class="loader" id="loader">
-        <div class="spinner"></div>
-        <span>Analyse et génération en cours...</span>
+  <!-- Source -->
+  <div class="panel">
+    <div class="section-label">Source</div>
+    <div class="type-selector">
+      <label><input type="radio" name="sourceType" value="user-story" checked><span>User Story</span></label>
+      <label><input type="radio" name="sourceType" value="spec"><span>Spécification</span></label>
+      <label><input type="radio" name="sourceType" value="oral"><span>Description orale</span></label>
+      <label><input type="radio" name="sourceType" value="rule"><span>Règle de gestion</span></label>
     </div>
+    <textarea class="source-input" id="sourceInput" placeholder="Colle ici ta user story, ta spec ou ta description fonctionnelle…"></textarea>
+  </div>
 
-    <div class="error-message" id="errorMessage"></div>
+  <div class="actions">
+    <button class="btn-primary" id="generateBtn" onclick="generate()">Analyser et générer</button>
+    <button class="btn-success" id="acceptAllBtn" disabled onclick="acceptAll()">Tout accepter</button>
+    <button class="btn-secondary" id="exportBtn" disabled onclick="exportJSON()">Exporter JSON</button>
+    <button class="btn-secondary" onclick="clearAll()">Effacer tout</button>
+  </div>
 
-    <!-- Bloc analyse de la source -->
-    <div class="analysis-block" id="analysisBlock">
-        <div class="analysis-title">Analyse de la source</div>
-        <div class="analysis-grid">
-            <div class="analysis-metric">
-                <div class="analysis-metric-label">Feature détectée</div>
-                <div class="analysis-metric-value" id="aFeature">—</div>
-            </div>
-            <div class="analysis-metric">
-                <div class="analysis-metric-label">Complexité estimée</div>
-                <div class="analysis-metric-value" id="aComplexity">—</div>
-            </div>
-            <div class="analysis-metric">
-                <div class="analysis-metric-label">Ambiguïtés</div>
-                <div class="analysis-metric-value" id="aAmbigCount">—</div>
-            </div>
-        </div>
-        <div class="callout-amber" id="ambigCallout">
-            <div class="callout-amber-title">Préconditions ambiguës détectées</div>
-            <ul id="ambigList"></ul>
-        </div>
-        <div class="callout-purple" id="regrCallout">
-            <div class="callout-purple-title">Risques de régression identifiés</div>
-            <ul id="regrList"></ul>
-        </div>
+  <div class="loader" id="loader"><div class="spinner"></div><span id="loaderMsg">Analyse en cours…</span></div>
+  <div class="error-msg" id="errorMsg"></div>
+
+  <!-- Analyse -->
+  <div class="analysis-block" id="analysisBlock">
+    <div class="section-label" style="margin-bottom:12px">Analyse de la source</div>
+    <div class="analysis-grid">
+      <div class="analysis-metric"><div class="am-label">Feature détectée</div><div class="am-value" id="aFeature">—</div></div>
+      <div class="analysis-metric"><div class="am-label">Complexité estimée</div><div class="am-value" id="aComplexity">—</div></div>
+      <div class="analysis-metric"><div class="am-label">Ambiguïtés</div><div class="am-value" id="aAmbigCount">—</div></div>
     </div>
-
-    <div class="results" id="results">
-        <div class="results-header" id="resultsHeader" style="display:none;">
-            <h2>Scénarios générés</h2>
-            <span class="stats" id="stats"></span>
-        </div>
-        <div class="scenarios-grid" id="scenariosGrid"></div>
-        <div class="empty-state" id="emptyState">
-            <p>Aucun scénario généré</p>
-            <p>Entrez une description et cliquez sur "Générer"</p>
-        </div>
+    <div class="callout callout-amber" id="ambigCallout">
+      <div class="callout-title">Préconditions ambiguës</div>
+      <ul id="ambigList"></ul>
     </div>
+    <div class="callout callout-purple" id="regrCallout">
+      <div class="callout-title">Risques de régression</div>
+      <ul id="regrList"></ul>
+    </div>
+  </div>
 
-    <footer>TestPilot v1.0 — Générateur de scénarios de tests IA</footer>
+  <!-- Résultats -->
+  <div id="resultsHeader" class="results-header" style="display:none">
+    <h2>Scénarios générés</h2>
+    <span class="stats" id="stats"></span>
+  </div>
+  <div class="scenarios-grid" id="scenariosGrid"></div>
+  <div class="empty-state" id="emptyState">
+    <p>Aucun scénario généré pour l'instant.</p>
+    <p>Colle une source ci-dessus et clique sur "Analyser et générer".</p>
+  </div>
+
+  <footer>TestPilot v1.1 — Générateur de scénarios de tests IA</footer>
 </div>
 
 <script>
-const STORAGE_KEY  = 'testpilot_scenarios';
-const ANALYSIS_KEY = 'testpilot_analysis';
-const PROVIDER_KEY = 'testpilot_provider';
+// ── Constants ─────────────────────────────────────────
+const SK = 'testpilot_scenarios';
+const AK = 'testpilot_analysis';
+const PK = 'testpilot_provider';
+const CK = 'testpilot_context';
 
+// ── State ─────────────────────────────────────────────
 const state = { scenarios: [], analysis: null };
 
-// ── Provider config ───────────────────────────────────
+// ── Providers ─────────────────────────────────────────
 const PROVIDERS = {
-    anthropic: {
-        label: 'Anthropic Claude', needsKey: true,
-        endpoint: 'https://api.anthropic.com/v1/messages',
-        keyPlaceholder: 'sk-ant-api03-...',
-        models: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514'],
-    },
-    openai: {
-        label: 'OpenAI / Azure', needsKey: true, endpointEditable: true,
-        endpoint: 'https://api.openai.com/v1/chat/completions',
-        keyPlaceholder: 'sk-...',
-        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
-    },
-    mistral: {
-        label: 'Mistral AI', needsKey: true,
-        endpoint: 'https://api.mistral.ai/v1/chat/completions',
-        keyPlaceholder: 'Clé API Mistral...',
-        models: ['mistral-large-latest', 'mistral-small-latest', 'open-mistral-nemo'],
-    },
-    ollama: {
-        label: 'Ollama (local)', needsKey: false, endpointEditable: true, offline: true,
-        endpoint: 'http://localhost:11434/v1/chat/completions',
-        keyPlaceholder: '',
-        models: ['llama3.2', 'mistral', 'qwen2.5-coder', 'phi4', 'deepseek-r1'],
-    },
+  anthropic: {
+    label:'Anthropic Claude', needsKey:true,
+    endpoint:'https://api.anthropic.com/v1/messages',
+    keyPlaceholder:'sk-ant-api03-...',
+    models:['claude-sonnet-4-20250514','claude-haiku-4-5-20251001','claude-opus-4-20250514'],
+  },
+  openai: {
+    label:'OpenAI / Azure', needsKey:true, endpointEditable:true,
+    endpoint:'https://api.openai.com/v1/chat/completions',
+    keyPlaceholder:'sk-...',
+    models:['gpt-4o','gpt-4o-mini','gpt-4-turbo'],
+  },
+  mistral: {
+    label:'Mistral AI', needsKey:true,
+    endpoint:'https://api.mistral.ai/v1/chat/completions',
+    keyPlaceholder:'Clé API Mistral...',
+    models:['mistral-large-latest','mistral-small-latest','open-mistral-nemo'],
+  },
+  ollama: {
+    label:'Ollama (local)', needsKey:false, endpointEditable:true, offline:true,
+    endpoint:'http://localhost:11434/v1/chat/completions',
+    keyPlaceholder:'',
+    models:['llama3.2','mistral','qwen2.5-coder','phi4','deepseek-r1'],
+  },
 };
 
-let currentProvider  = 'anthropic';
+let currentProvider = 'anthropic';
 let providerSettings = {};
 
 function loadProviderSettings() {
-    try { providerSettings = JSON.parse(localStorage.getItem(PROVIDER_KEY)) || {}; } catch { providerSettings = {}; }
-    for (const [id, cfg] of Object.entries(PROVIDERS)) {
-        if (!providerSettings[id]) providerSettings[id] = { key: '', model: cfg.models[0], endpoint: cfg.endpoint };
-    }
+  try { providerSettings = JSON.parse(localStorage.getItem(PK)) || {}; } catch { providerSettings = {}; }
+  for (const [id, cfg] of Object.entries(PROVIDERS)) {
+    if (!providerSettings[id]) providerSettings[id] = { key:'', model:cfg.models[0], endpoint:cfg.endpoint };
+  }
 }
 
-function saveProviderSettings() {
-    localStorage.setItem(PROVIDER_KEY, JSON.stringify(providerSettings));
-}
+function saveProviderSettings() { localStorage.setItem(PK, JSON.stringify(providerSettings)); }
 
 function setProvider(id, btn) {
-    currentProvider = id;
-    document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    renderProviderFields();
+  currentProvider = id;
+  document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderProviderFields();
 }
 
 function renderProviderFields() {
-    const cfg = PROVIDERS[currentProvider];
-    const s   = providerSettings[currentProvider] || {};
-    const fld = document.getElementById('providerFields');
-    if (!fld) return;
-    const modelOpts = cfg.models.map(m =>
-        `<option value="${m}" ${(s.model||cfg.models[0])===m?'selected':''}>${m}</option>`
-    ).join('') + '<option value="__custom__">Autre (saisir)...</option>';
+  const cfg = PROVIDERS[currentProvider];
+  const s   = providerSettings[currentProvider] || {};
+  const fld = document.getElementById('providerFields');
+  if (!fld) return;
+  const opts = cfg.models.map(m =>
+    `<option value="${m}" ${(s.model||cfg.models[0])===m?'selected':''}>${m}</option>`
+  ).join('') + '<option value="__custom__">Autre (saisir)…</option>';
 
-    fld.innerHTML = `
-        ${cfg.needsKey ? `<div>
-            <div class="field-label">Clé API</div>
-            <input type="password" id="pvdrKey" placeholder="${cfg.keyPlaceholder}" value="${s.key||''}"
-                   oninput="providerSettings[currentProvider].key=this.value;saveProviderSettings()">
-        </div>` : `<div style="font-size:0.85rem;color:var(--success);padding:4px 0;">✓ Aucune clé requise — ${cfg.offline?'100% local, zéro donnée externe':'mode local'}</div>`}
-        <div class="field-row">
-            <div>
-                <div class="field-label">Modèle</div>
-                <select id="pvdrModel" onchange="onModelChange(this)">
-                    ${modelOpts}
-                </select>
-                <input type="text" id="pvdrModelCustom" placeholder="ex : llama3.2:latest"
-                       style="display:${s.model==='__custom__'?'block':'none'};margin-top:6px;"
-                       value="${s.model==='__custom__'?(s.modelCustom||''):''}"
-                       oninput="providerSettings[currentProvider].modelCustom=this.value;saveProviderSettings()">
-            </div>
-            ${cfg.endpointEditable ? `<div>
-                <div class="field-label">Endpoint URL</div>
-                <input type="text" id="pvdrEndpoint" value="${s.endpoint||cfg.endpoint}"
-                       oninput="providerSettings[currentProvider].endpoint=this.value;saveProviderSettings()">
-            </div>` : '<div></div>'}
-        </div>
-        ${cfg.offline ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">
-            Ollama doit tourner localement —
-            <a href="https://ollama.ai" target="_blank" style="color:var(--primary);">ollama.ai</a>
-            puis <code style="background:var(--bg-alt);padding:1px 4px;border-radius:3px;">ollama serve</code>
-        </div>` : ''}`;
+  fld.innerHTML = `
+    ${cfg.needsKey ? `<div>
+      <div class="field-label">Clé API</div>
+      <input type="password" placeholder="${cfg.keyPlaceholder}" value="${s.key||''}"
+             oninput="providerSettings[currentProvider].key=this.value;saveProviderSettings()">
+    </div>` : `<div style="font-size:.85rem;color:var(--success);padding:4px 0">✓ Aucune clé requise — ${cfg.offline?'100% local':'mode local'}</div>`}
+    <div class="field-row">
+      <div>
+        <div class="field-label">Modèle</div>
+        <select onchange="onModelChange(this)">${opts}</select>
+        <input type="text" id="pvdrModelCustom" placeholder="ex : llama3.2:latest"
+               style="display:${s.model==='__custom__'?'block':'none'};margin-top:6px"
+               value="${s.model==='__custom__'?(s.modelCustom||''):''}"
+               oninput="providerSettings[currentProvider].modelCustom=this.value;saveProviderSettings()">
+      </div>
+      ${cfg.endpointEditable ? `<div>
+        <div class="field-label">Endpoint URL</div>
+        <input type="text" value="${s.endpoint||cfg.endpoint}"
+               oninput="providerSettings[currentProvider].endpoint=this.value;saveProviderSettings()">
+      </div>` : '<div></div>'}
+    </div>
+    ${cfg.offline ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:2px">
+      Ollama doit tourner localement — <a href="https://ollama.ai" target="_blank" style="color:var(--primary)">ollama.ai</a>
+      puis <code style="background:var(--bg-alt);padding:1px 4px;border-radius:3px">ollama serve</code>
+    </div>` : ''}`;
 }
 
 function onModelChange(sel) {
-    providerSettings[currentProvider].model = sel.value;
-    const custom = document.getElementById('pvdrModelCustom');
-    if (custom) custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
-    saveProviderSettings();
+  providerSettings[currentProvider].model = sel.value;
+  const c = document.getElementById('pvdrModelCustom');
+  if (c) c.style.display = sel.value === '__custom__' ? 'block' : 'none';
+  saveProviderSettings();
 }
 
 function getActiveModel() {
-    const s = providerSettings[currentProvider];
-    if (s.model === '__custom__') return s.modelCustom || '';
-    return s.model || PROVIDERS[currentProvider].models[0];
+  const s = providerSettings[currentProvider];
+  return s.model === '__custom__' ? (s.modelCustom||'') : (s.model||PROVIDERS[currentProvider].models[0]);
 }
 
-// ── LLM abstraction layer ─────────────────────────────
+// ── Contexte projet ───────────────────────────────────
+let ctxVisible = false;
+
+function toggleContext() {
+  ctxVisible = !ctxVisible;
+  document.getElementById('contextFields').classList.toggle('visible', ctxVisible);
+  document.getElementById('ctxChevron').classList.toggle('open', ctxVisible);
+}
+
+function loadContext() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CK)) || {};
+    if (c.project)     document.getElementById('ctxProject').value     = c.project;
+    if (c.stack)       document.getElementById('ctxStack').value       = c.stack;
+    if (c.domain)      document.getElementById('ctxDomain').value      = c.domain;
+    if (c.adjacent)    document.getElementById('ctxAdjacent').value    = c.adjacent;
+    if (c.constraints) document.getElementById('ctxConstraints').value = c.constraints;
+    // Si un contexte existe, l'ouvrir automatiquement
+    if (c.project || c.stack || c.domain) { ctxVisible = true; toggleContext(); }
+  } catch {}
+}
+
+function saveContext() {
+  localStorage.setItem(CK, JSON.stringify({
+    project:     document.getElementById('ctxProject').value,
+    stack:       document.getElementById('ctxStack').value,
+    domain:      document.getElementById('ctxDomain').value,
+    adjacent:    document.getElementById('ctxAdjacent').value,
+    constraints: document.getElementById('ctxConstraints').value,
+  }));
+}
+
+function getContext() {
+  try { return JSON.parse(localStorage.getItem(CK)) || {}; } catch { return {}; }
+}
+
+// ── Prompt ────────────────────────────────────────────
+function buildPrompt(sourceType, sourceText) {
+  const typeLabels = {
+    'user-story': 'User Story agile',
+    spec:         'Spécification fonctionnelle',
+    oral:         'Description orale retranscrite',
+    rule:         'Règle de gestion métier',
+  };
+  const ctx = getContext();
+
+  const contextBlock = (ctx.project || ctx.stack || ctx.domain || ctx.adjacent || ctx.constraints) ? `
+CONTEXTE DU PROJET :
+${ctx.project     ? `- Mission / projet : ${ctx.project}`           : ''}
+${ctx.stack       ? `- Stack technique  : ${ctx.stack}`             : ''}
+${ctx.domain      ? `- Domaine métier   : ${ctx.domain}`            : ''}
+${ctx.adjacent    ? `- Features adjacentes à risque : ${ctx.adjacent}` : ''}
+${ctx.constraints ? `- Contraintes globales : ${ctx.constraints}`   : ''}
+` : '';
+
+  return `Tu es un expert QA senior avec 15 ans d'expérience sur des projets de transformation SI.
+Analyse la source suivante et génère des scénarios de tests structurés, précis et exploitables directement en campagne de recette.
+${contextBlock}
+SOURCE (type : ${typeLabels[sourceType] || sourceType}) :
+${sourceText}
+
+INSTRUCTIONS DE GÉNÉRATION :
+1. Détecte la feature principale testée (libellé court, max 5 mots).
+2. Évalue la complexité : simple (1-2 chemins), moyenne (3-5), complexe (6+).
+3. Identifie les préconditions implicites manquantes ou ambiguës dans la source (max 4).
+4. ${ctx.adjacent ? `En tenant compte des features adjacentes (${ctx.adjacent}), identifie` : 'Identifie'} les risques de régression sur d'autres features (max 3, sois spécifique).
+5. Génère les scénarios selon la complexité :
+   - simple   → 3-4 scénarios (1 nominal, 1-2 edge cases, 1 dégradé)
+   - moyenne  → 5-6 scénarios (2 nominaux, 2-3 edge cases, 1-2 dégradés)
+   - complexe → 7-8 scénarios (2 nominaux, 3-4 edge cases, 2 dégradés)
+6. Pour chaque scénario :
+   - Le "given" décrit l'état initial précis et les préconditions nécessaires
+   - Le "when" décrit une action unique et atomique
+   - Le "then" décrit le résultat vérifiable de manière objective (pas "ça marche" mais "le message X s'affiche")
+   - Les edge cases doivent couvrir : valeurs nulles/vides, limites numériques, états concurrents, rôles utilisateur distincts
+   - Les cas dégradés doivent couvrir : erreurs réseau, données incohérentes, indisponibilité de service tiers
+
+Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commentaires :
+{
+  "feature": "string",
+  "complexity": "simple|moyenne|complexe",
+  "ambiguities": ["string"],
+  "regressionRisks": ["string"],
+  "scenarios": [
+    {
+      "id": "SC-001",
+      "type": "functional|negative|edge-case|boundary",
+      "priority": "high|medium|low",
+      "title": "string",
+      "given": "string",
+      "when": "string",
+      "then": "string"
+    }
+  ]
+}`;
+}
+
+// ── LLM call ──────────────────────────────────────────
 async function callLLM(prompt) {
-    const provider = PROVIDERS[currentProvider];
-    const s        = providerSettings[currentProvider];
-    const model    = getActiveModel();
-    const endpoint = s.endpoint || provider.endpoint;
+  const provider = PROVIDERS[currentProvider];
+  const s        = providerSettings[currentProvider];
+  const model    = getActiveModel();
+  const endpoint = s.endpoint || provider.endpoint;
 
-    if (provider.needsKey && !s.key) {
-        throw new Error(`Clé API ${provider.label} manquante.`);
-    }
-    if (!model) throw new Error('Aucun modèle sélectionné.');
+  if (provider.needsKey && !s.key) throw new Error(`Clé API ${provider.label} manquante.`);
+  if (!model) throw new Error('Aucun modèle sélectionné.');
 
-    // ── Anthropic (format propriétaire) ──────────────
-    if (currentProvider === 'anthropic') {
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': s.key,
-                'anthropic-version': '2023-06-01',
-            },
-            body: JSON.stringify({ model, max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }),
-        });
-        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message || `Erreur Anthropic ${res.status}`); }
-        const data = await res.json();
-        return data.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    }
-
-    // ── OpenAI / Mistral / Ollama (format OpenAI Chat) ─
-    const headers = { 'Content-Type': 'application/json' };
-    if (provider.needsKey) headers['Authorization'] = `Bearer ${s.key}`;
-
+  if (currentProvider === 'anthropic') {
     const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2 }),
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-api-key':s.key, 'anthropic-version':'2023-06-01' },
+      body: JSON.stringify({ model, max_tokens:2000, messages:[{ role:'user', content:prompt }] }),
     });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message || `Erreur ${provider.label} ${res.status}`); }
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message||`Erreur Anthropic ${res.status}`); }
     const data = await res.json();
-    return data.choices?.[0]?.message?.content || '';
+    return data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
+  }
+
+  // OpenAI / Mistral / Ollama
+  const headers = { 'Content-Type':'application/json' };
+  if (provider.needsKey) headers['Authorization'] = `Bearer ${s.key}`;
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ model, messages:[{ role:'user', content:prompt }], temperature:0.2 }),
+  });
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message||`Erreur ${provider.label} ${res.status}`); }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
 }
 
+// ── Generate ──────────────────────────────────────────
 async function generate() {
-    hideError();
-    const text = el.sourceInput.value.trim();
-    if (!text) { showError('Veuillez entrer une description.'); return; }
+  hideError();
+  const text = document.getElementById('sourceInput').value.trim();
+  if (!text) { showError('Veuillez entrer une description.'); return; }
 
-    showLoader();
-    try {
-        const raw    = await callLLM(buildPrompt(getType(), text));
-        const match  = raw.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('Réponse IA invalide — JSON non trouvé. Essaie un modèle plus capable.');
-        const parsed = JSON.parse(match[0]);
-        if (!Array.isArray(parsed.scenarios)) throw new Error('Format invalide — scénarios manquants.');
+  setLoader(true, 'Analyse et génération en cours…');
+  try {
+    const raw   = await callLLM(buildPrompt(getType(), text));
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Réponse IA invalide — JSON introuvable. Essaie un modèle plus capable ou reformule la source.');
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed.scenarios)) throw new Error('Format invalide — tableau de scénarios manquant.');
 
-        state.analysis  = { feature: parsed.feature, complexity: parsed.complexity, ambiguities: parsed.ambiguities || [], regressionRisks: parsed.regressionRisks || [] };
-        state.scenarios = parsed.scenarios.map((s, i) => ({ ...s, accepted: false, _id: Date.now() + i }));
+    state.analysis  = { feature:parsed.feature, complexity:parsed.complexity, ambiguities:parsed.ambiguities||[], regressionRisks:parsed.regressionRisks||[] };
+    state.scenarios = parsed.scenarios.map((s,i) => ({ ...s, accepted:false, _id:Date.now()+i }));
 
-        saveToStorage();
-        renderAnalysis(state.analysis);
-        renderScenarios();
-        el.sourceInput.value = '';
+    localStorage.setItem(SK, JSON.stringify(state.scenarios));
+    localStorage.setItem(AK, JSON.stringify(state.analysis));
 
-    } catch(e) {
-        showError(e.message || 'Erreur lors de la génération.');
-    } finally {
-        hideLoader();
-    }
+    renderAnalysis(state.analysis);
+    renderScenarios();
+    document.getElementById('sourceInput').value = '';
+
+  } catch(e) {
+    showError(e.message || 'Erreur lors de la génération.');
+  } finally {
+    setLoader(false);
+  }
 }
 
-// ── Actions ────────────────────────────────────────────
-function toggleAccept(i) { state.scenarios[i].accepted = !state.scenarios[i].accepted; saveToStorage(); renderScenarios(); }
-function deleteSc(i)      { state.scenarios.splice(i, 1); saveToStorage(); renderScenarios(); }
-
-function toggleEdit(i) {
-    const form = document.getElementById(`edit-${i}`);
-    form.classList.toggle('active');
+// ── UI helpers ────────────────────────────────────────
+function esc(t) { const d=document.createElement('div'); d.textContent=String(t||''); return d.innerHTML; }
+function getType() { for (const r of document.getElementsByName('sourceType')) if (r.checked) return r.value; return 'user-story'; }
+function showError(m) { const e=document.getElementById('errorMsg'); e.textContent=m; e.classList.add('active'); }
+function hideError()  { document.getElementById('errorMsg').classList.remove('active'); }
+function setLoader(on, msg='') {
+  const l=document.getElementById('loader'); const b=document.getElementById('generateBtn');
+  l.classList.toggle('active',on); b.disabled=on;
+  if (msg) document.getElementById('loaderMsg').textContent=msg;
 }
+
+function updateNavBadge() {
+  const badge = document.getElementById('navBadge');
+  if (!badge) return;
+  const n = state.scenarios.filter(s=>s.accepted).length;
+  badge.textContent = n;
+  badge.style.display = n > 0 ? 'inline-block' : 'none';
+}
+
+// ── Analysis render ───────────────────────────────────
+function renderAnalysis(a) {
+  document.getElementById('analysisBlock').classList.add('active');
+  document.getElementById('aFeature').textContent = a.feature || '—';
+
+  const cx = (a.complexity||'simple').toLowerCase();
+  document.getElementById('aComplexity').innerHTML = `<span class="complexity-badge cx-${cx}">${cx}</span>`;
+
+  const ambigs = a.ambiguities||[];
+  document.getElementById('aAmbigCount').textContent = ambigs.length===0 ? 'Aucune' : `${ambigs.length} détectée${ambigs.length>1?'s':''}`;
+
+  const ac = document.getElementById('ambigCallout');
+  if (ambigs.length>0) { ac.classList.add('active'); document.getElementById('ambigList').innerHTML=ambigs.map(x=>`<li>${esc(x)}</li>`).join(''); }
+  else ac.classList.remove('active');
+
+  const regrs = a.regressionRisks||[];
+  const rc = document.getElementById('regrCallout');
+  if (regrs.length>0) { rc.classList.add('active'); document.getElementById('regrList').innerHTML=regrs.map(x=>`<li>${esc(x)}</li>`).join(''); }
+  else rc.classList.remove('active');
+}
+
+// ── Scenarios render ──────────────────────────────────
+function renderScenarios() {
+  const accepted = state.scenarios.filter(s=>s.accepted).length;
+  const total    = state.scenarios.length;
+
+  document.getElementById('resultsHeader').style.display = total>0 ? 'flex' : 'none';
+  document.getElementById('stats').textContent = `${accepted} accepté${accepted>1?'s':''} / ${total} total`;
+  document.getElementById('acceptAllBtn').disabled = total===0||accepted===total;
+  document.getElementById('exportBtn').disabled    = accepted===0;
+  document.getElementById('emptyState').style.display = total===0 ? 'block' : 'none';
+
+  if (total===0) { document.getElementById('scenariosGrid').innerHTML=''; updateNavBadge(); return; }
+
+  document.getElementById('scenariosGrid').innerHTML = state.scenarios.map((sc,i) => `
+    <div class="scenario-card ${sc.accepted?'accepted':''}" id="card-${i}">
+      <div class="card-header">
+        <div>
+          <div class="card-id">${esc(sc.id||('SC-'+String(i+1).padStart(3,'0')))}</div>
+          <div class="card-title">${esc(sc.title)}</div>
+        </div>
+        <div class="badges">
+          <span class="badge badge-type ${esc(sc.type)}">${esc(sc.type)}</span>
+          <span class="badge badge-priority ${esc(sc.priority)}">${esc(sc.priority)}</span>
+        </div>
+      </div>
+      <div class="gwt-block"><div class="gwt-label">Given</div><div class="gwt-text">${esc(sc.given)}</div></div>
+      <div class="gwt-block"><div class="gwt-label">When</div><div class="gwt-text">${esc(sc.when)}</div></div>
+      <div class="gwt-block"><div class="gwt-label">Then</div><div class="gwt-text">${esc(sc.then)}</div></div>
+      <div class="card-actions">
+        <button class="btn-sm ${sc.accepted?'btn-secondary':'btn-success'}" onclick="toggleAccept(${i})">
+          ${sc.accepted?'✓ Accepté — Retirer':'Accepter'}
+        </button>
+        <button class="btn-sm btn-secondary" onclick="toggleEdit(${i})">Modifier</button>
+        <button class="btn-sm btn-danger" onclick="deleteSc(${i})">Supprimer</button>
+      </div>
+      <div class="edit-form" id="edit-${i}">
+        <label>Titre</label>
+        <input type="text" id="ef-title-${i}" value="${esc(sc.title)}">
+        <label>Given</label>
+        <textarea id="ef-given-${i}">${esc(sc.given)}</textarea>
+        <label>When</label>
+        <textarea id="ef-when-${i}">${esc(sc.when)}</textarea>
+        <label>Then</label>
+        <textarea id="ef-then-${i}">${esc(sc.then)}</textarea>
+        <label>Priorité</label>
+        <select id="ef-prio-${i}">
+          <option value="high"   ${sc.priority==='high'  ?'selected':''}>High — critique</option>
+          <option value="medium" ${sc.priority==='medium'?'selected':''}>Medium — normale</option>
+          <option value="low"    ${sc.priority==='low'   ?'selected':''}>Low — basse</option>
+        </select>
+        <div class="edit-form-actions">
+          <button class="btn-sm btn-primary" onclick="saveEdit(${i})">Enregistrer</button>
+          <button class="btn-sm btn-secondary" onclick="toggleEdit(${i})">Annuler</button>
+        </div>
+      </div>
+    </div>`).join('');
+
+  updateNavBadge();
+}
+
+// ── Actions ───────────────────────────────────────────
+function toggleAccept(i) { state.scenarios[i].accepted=!state.scenarios[i].accepted; localStorage.setItem(SK,JSON.stringify(state.scenarios)); renderScenarios(); }
+function deleteSc(i)     { state.scenarios.splice(i,1); localStorage.setItem(SK,JSON.stringify(state.scenarios)); renderScenarios(); }
+function toggleEdit(i)   { document.getElementById(`edit-${i}`).classList.toggle('active'); }
 
 function saveEdit(i) {
-    const title = document.getElementById(`ef-title-${i}`).value.trim();
-    const given = document.getElementById(`ef-given-${i}`).value.trim();
-    const when  = document.getElementById(`ef-when-${i}`).value.trim();
-    const then_ = document.getElementById(`ef-then-${i}`).value.trim();
-    const prio  = document.getElementById(`ef-prio-${i}`).value;
-    if (!title || !given || !when || !then_) { showError('Tous les champs sont requis.'); return; }
-    state.scenarios[i] = { ...state.scenarios[i], title, given, when, then: then_, priority: prio };
-    saveToStorage();
-    renderScenarios();
+  const title=document.getElementById(`ef-title-${i}`).value.trim();
+  const given=document.getElementById(`ef-given-${i}`).value.trim();
+  const when =document.getElementById(`ef-when-${i}`).value.trim();
+  const then_=document.getElementById(`ef-then-${i}`).value.trim();
+  const prio =document.getElementById(`ef-prio-${i}`).value;
+  if (!title||!given||!when||!then_) { showError('Tous les champs sont requis.'); return; }
+  state.scenarios[i]={...state.scenarios[i],title,given,when,then:then_,priority:prio};
+  localStorage.setItem(SK,JSON.stringify(state.scenarios));
+  renderScenarios();
 }
 
-function acceptAll() { state.scenarios.forEach(s => s.accepted = true); saveToStorage(); renderScenarios(); }
+function acceptAll() { state.scenarios.forEach(s=>s.accepted=true); localStorage.setItem(SK,JSON.stringify(state.scenarios)); renderScenarios(); }
 
 function exportJSON() {
-    const toExport = state.scenarios.filter(s => s.accepted).map(({ accepted, _id, ...rest }) => rest);
-    if (!toExport.length) { showError('Aucun scénario accepté.'); return; }
-    const blob = new Blob([JSON.stringify(toExport, null, 2)], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `testpilot-${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
+  const out=state.scenarios.filter(s=>s.accepted).map(({accepted,_id,...r})=>r);
+  if (!out.length) { showError('Aucun scénario accepté.'); return; }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));
+  a.download=`testpilot-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 function clearAll() {
-    if (!confirm('Effacer tous les scénarios et l\'analyse ?')) return;
-    state.scenarios = []; state.analysis = null;
-    localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(ANALYSIS_KEY);
-    el.analysisBlock.classList.remove('active');
-    renderScenarios(); hideError();
+  if (!confirm('Effacer tous les scénarios et l\'analyse ?')) return;
+  state.scenarios=[]; state.analysis=null;
+  localStorage.removeItem(SK); localStorage.removeItem(AK);
+  document.getElementById('analysisBlock').classList.remove('active');
+  renderScenarios(); hideError();
 }
 
-// ── Event listeners ────────────────────────────────────
-el.generateBtn.addEventListener('click', generate);
-el.acceptAllBtn.addEventListener('click', acceptAll);
-el.exportBtn.addEventListener('click', exportJSON);
-el.clearBtn.addEventListener('click', clearAll);
-
-// Init
+// ── Init ──────────────────────────────────────────────
 loadProviderSettings();
 renderProviderFields();
-try { state.scenarios = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { state.scenarios = []; }
-try { state.analysis  = JSON.parse(localStorage.getItem(ANALYSIS_KEY)) || null; } catch { state.analysis = null; }
+loadContext();
+try { state.scenarios=JSON.parse(localStorage.getItem(SK))||[]; } catch { state.scenarios=[]; }
+try { state.analysis =JSON.parse(localStorage.getItem(AK))||null; } catch { state.analysis=null; }
 if (state.analysis) renderAnalysis(state.analysis);
 renderScenarios();
-updateNavBadge();
 </script>
 </body>
 </html>
