@@ -17,853 +17,500 @@
             --danger: #dc3545;
             --success: #28a745;
             --warning: #ffc107;
+            --purple: #534AB7;
+            --purple-light: #EEEDFE;
+            --amber: #EF9F27;
+            --amber-light: #FAEEDA;
         }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+        header { border-bottom: 2px solid var(--primary); padding-bottom: 20px; margin-bottom: 30px; }
+        h1 { color: var(--primary); font-size: 1.8rem; display: flex; align-items: center; gap: 10px; }
+        h1::before { content: '✈'; font-size: 1.5rem; }
+        .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 5px; }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        /* API config */
+        .api-config { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+        .api-config label { display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.9rem; }
+        .api-config input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: monospace; }
+        .api-config input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(59,109,17,0.2); }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
-            min-height: 100vh;
-        }
+        /* Input section */
+        .input-section { margin-bottom: 20px; }
+        .input-section > label { display: block; font-weight: 600; margin-bottom: 8px; }
+        .type-selector { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+        .type-selector label { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: all 0.2s; font-weight: normal; font-size: 0.9rem; }
+        .type-selector input { display: none; }
+        .type-selector label:has(input:checked) { border-color: var(--primary); background: rgba(59,109,17,0.08); color: var(--primary); }
+        .type-selector label:hover { border-color: var(--primary-light); }
+        textarea { width: 100%; min-height: 150px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; resize: vertical; font-family: inherit; }
+        textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(59,109,17,0.2); }
 
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 20px;
-        }
+        /* Buttons */
+        .actions { display: flex; gap: 12px; margin-bottom: 30px; flex-wrap: wrap; }
+        button { padding: 12px 24px; border: none; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background: white; border: 1px solid var(--border); color: var(--text); }
+        .btn-secondary:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+        .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover:not(:disabled) { background: #218838; }
+        .btn-success:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-sm { padding: 6px 12px; font-size: 0.85rem; }
 
-        header {
-            border-bottom: 2px solid var(--primary);
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
+        /* Loader */
+        .loader { display: none; align-items: center; gap: 10px; color: var(--text-muted); padding: 20px; }
+        .loader.active { display: flex; }
+        .spinner { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        h1 {
-            color: var(--primary);
-            font-size: 1.8rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+        /* Error */
+        .error-message { display: none; background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; }
+        .error-message.active { display: block; }
 
-        h1::before {
-            content: '✈';
-            font-size: 1.5rem;
-        }
+        /* Analysis block */
+        .analysis-block { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 20px; display: none; }
+        .analysis-block.active { display: block; }
+        .analysis-title { font-weight: 700; font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 12px; }
+        .analysis-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+        .analysis-metric { background: white; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+        .analysis-metric-label { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
+        .analysis-metric-value { font-size: 0.95rem; font-weight: 600; color: var(--primary); }
+        .complexity-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+        .complexity-simple { background: #d4edda; color: #155724; }
+        .complexity-moyenne { background: #fff3cd; color: #856404; }
+        .complexity-complexe { background: #f8d7da; color: #721c24; }
 
-        .subtitle {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            margin-top: 5px;
-        }
+        /* Ambiguities callout */
+        .callout-amber { background: var(--amber-light); border-left: 4px solid var(--amber); border-radius: 0 6px 6px 0; padding: 10px 14px; margin-top: 10px; display: none; }
+        .callout-amber.active { display: block; }
+        .callout-amber-title { font-size: 0.8rem; font-weight: 700; color: #854F0B; margin-bottom: 6px; }
+        .callout-amber ul { margin: 0; padding-left: 18px; font-size: 0.85rem; color: #633806; }
 
-        .api-config {
-            background: var(--bg-alt);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
+        /* Regression callout */
+        .callout-purple { background: var(--purple-light); border-left: 4px solid var(--purple); border-radius: 0 6px 6px 0; padding: 10px 14px; margin-top: 10px; display: none; }
+        .callout-purple.active { display: block; }
+        .callout-purple-title { font-size: 0.8rem; font-weight: 700; color: #3C3489; margin-bottom: 6px; }
+        .callout-purple ul { margin: 0; padding-left: 18px; font-size: 0.85rem; color: #534AB7; }
 
-        .api-config label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 8px;
-            font-size: 0.9rem;
-        }
+        /* Results */
+        .results { margin-top: 30px; }
+        .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        .results-header h2 { color: var(--text); font-size: 1.2rem; }
+        .stats { font-size: 0.9rem; color: var(--text-muted); }
+        .scenarios-grid { display: grid; gap: 16px; }
 
-        .api-config input {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 0.9rem;
-            font-family: monospace;
-        }
-
-        .api-config input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(59, 109, 17, 0.2);
-        }
-
-        .input-section {
-            margin-bottom: 20px;
-        }
-
-        .input-section label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .type-selector {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
-        }
-
-        .type-selector label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 14px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-weight: normal;
-            font-size: 0.9rem;
-        }
-
-        .type-selector input {
-            display: none;
-        }
-
-        .type-selector input:checked + span {
-            color: var(--primary);
-        }
-
-        .type-selector label:has(input:checked) {
-            border-color: var(--primary);
-            background: rgba(59, 109, 17, 0.08);
-            color: var(--primary);
-        }
-
-        .type-selector label:hover {
-            border-color: var(--primary-light);
-        }
-
-        textarea {
-            width: 100%;
-            min-height: 150px;
-            padding: 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 0.95rem;
-            resize: vertical;
-            font-family: inherit;
-        }
-
-        textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(59, 109, 17, 0.2);
-        }
-
-        .actions {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-        }
-
-        button {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: white;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-            background: var(--primary-dark);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .btn-secondary {
-            background: white;
-            border: 1px solid var(--border);
-            color: var(--text);
-        }
-
-        .btn-secondary:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        .btn-success {
-            background: var(--success);
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #218838;
-        }
-
-        .btn-danger {
-            background: var(--danger);
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c82333;
-        }
-
-        .btn-sm {
-            padding: 6px 12px;
-            font-size: 0.85rem;
-        }
-
-        .loader {
-            display: none;
-            align-items: center;
-            gap: 10px;
-            color: var(--text-muted);
-            padding: 20px;
-            text-align: center;
-        }
-
-        .loader.active {
-            display: flex;
-        }
-
-        .spinner {
-            width: 24px;
-            height: 24px;
-            border: 3px solid var(--border);
-            border-top-color: var(--primary);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .error-message {
-            display: none;
-            background: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-        }
-
-        .error-message.active {
-            display: block;
-        }
-
-        .results {
-            margin-top: 30px;
-        }
-
-        .results-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .results-header h2 {
-            color: var(--text);
-            font-size: 1.2rem;
-        }
-
-        .stats {
-            font-size: 0.9rem;
-            color: var(--text-muted);
-        }
-
-        .scenarios-grid {
-            display: grid;
-            gap: 16px;
-        }
-
-        .scenario-card {
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            background: white;
-            transition: box-shadow 0.2s;
-        }
-
-        .scenario-card:hover {
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-
-        .scenario-card.accepted {
-            border-left: 4px solid var(--success);
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 12px;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .card-title {
-            font-weight: 600;
-            font-size: 1rem;
-            flex: 1;
-        }
-
-        .badges {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
-        .badge {
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .badge-type {
-            background: var(--primary);
-            color: white;
-        }
-
-        .badge-type.spec { background: #6f42c1; }
-        .badge-type.user-story { background: var(--primary); }
-        .badge-type.oral { background: #17a2b8; }
-        .badge-type.rule { background: #fd7e14; }
-
-        .badge-priority {
-            background: var(--bg-alt);
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-        }
-
+        /* Scenario card */
+        .scenario-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: white; transition: box-shadow 0.2s; }
+        .scenario-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .scenario-card.accepted { border-left: 4px solid var(--success); }
+        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+        .card-id { font-family: monospace; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
+        .card-title { font-weight: 600; font-size: 1rem; flex: 1; }
+        .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        .badge-type { background: var(--primary); color: white; }
+        .badge-type.negative { background: #dc3545; }
+        .badge-type.edge-case { background: #17a2b8; }
+        .badge-type.boundary { background: #6f42c1; }
+        .badge-type.functional { background: var(--primary); }
+        .badge-priority { background: var(--bg-alt); color: var(--text-muted); border: 1px solid var(--border); }
         .badge-priority.high { background: #f8d7da; color: #721c24; border-color: #f5c6cb; }
         .badge-priority.medium { background: #fff3cd; color: #856404; border-color: #ffeeba; }
         .badge-priority.low { background: #d4edda; color: #155724; border-color: #c3e6cb; }
+        .gwt-block { margin-bottom: 10px; }
+        .gwt-label { font-weight: 600; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
+        .gwt-text { font-size: 0.9rem; color: var(--text); }
+        .card-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 
-        .gwt-block {
-            margin-bottom: 10px;
-        }
+        /* Inline edit form */
+        .edit-form { display: none; margin-top: 12px; padding: 14px; background: var(--bg-alt); border-radius: 6px; }
+        .edit-form.active { display: block; }
+        .edit-form label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; margin-top: 10px; }
+        .edit-form label:first-child { margin-top: 0; }
+        .edit-form input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; }
+        .edit-form textarea { min-height: 60px; margin-bottom: 0; }
+        .edit-form select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; background: white; }
+        .edit-form-actions { display: flex; gap: 8px; margin-top: 12px; }
 
-        .gwt-label {
-            font-weight: 600;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            margin-bottom: 2px;
-        }
+        /* Empty state */
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+        .empty-state p { margin-bottom: 10px; }
 
-        .gwt-text {
-            font-size: 0.9rem;
-            color: var(--text);
-        }
-
-        .card-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid var(--border);
-            flex-wrap: wrap;
-        }
-
-        .edit-prompt {
-            display: none;
-            margin-top: 12px;
-            padding: 12px;
-            background: var(--bg-alt);
-            border-radius: 6px;
-        }
-
-        .edit-prompt.active {
-            display: block;
-        }
-
-        .edit-prompt textarea {
-            min-height: 80px;
-            margin-bottom: 10px;
-        }
-
-        .edit-prompt-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: var(--text-muted);
-        }
-
-        .empty-state p {
-            margin-bottom: 10px;
-        }
-
-        footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border);
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-        }
+        footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); text-align: center; color: var(--text-muted); font-size: 0.85rem; }
 
         @media (max-width: 600px) {
-            .container {
-                padding: 15px;
-            }
-
-            .actions {
-                flex-direction: column;
-            }
-
-            .actions button {
-                width: 100%;
-            }
-
-            .card-header {
-                flex-direction: column;
-            }
-
-            .badges {
-                width: 100%;
-            }
+            .container { padding: 15px; }
+            .actions { flex-direction: column; }
+            .actions button { width: 100%; }
+            .analysis-grid { grid-template-columns: 1fr; }
+            .card-header { flex-direction: column; }
+            .badges { width: 100%; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>TestPilot</h1>
-            <p class="subtitle">Générateur de scénarios de tests assisté par IA</p>
-        </header>
+<div class="container">
+    <header>
+        <h1>TestPilot</h1>
+        <p class="subtitle">Générateur de scénarios de tests assisté par IA</p>
+    </header>
 
-        <div class="api-config">
-            <label for="apiKey">Clé API Anthropic</label>
-            <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off">
-        </div>
-
-        <div class="input-section">
-            <label>Type de source</label>
-            <div class="type-selector">
-                <label>
-                    <input type="radio" name="sourceType" value="user-story" checked>
-                    <span>User Story</span>
-                </label>
-                <label>
-                    <input type="radio" name="sourceType" value="spec">
-                    <span>Spécification</span>
-                </label>
-                <label>
-                    <input type="radio" name="sourceType" value="oral">
-                    <span>Description orale</span>
-                </label>
-                <label>
-                    <input type="radio" name="sourceType" value="rule">
-                    <span>Règle de gestion</span>
-                </label>
-            </div>
-            <label for="sourceInput">Description / Spécification</label>
-            <textarea id="sourceInput" placeholder="Décrivez votre fonctionnalité, scénario ou règle de gestion..."></textarea>
-        </div>
-
-        <div class="actions">
-            <button class="btn-primary" id="generateBtn">Générer les scénarios</button>
-            <button class="btn-success" id="acceptAllBtn" disabled>Tout accepter</button>
-            <button class="btn-secondary" id="exportBtn" disabled>Exporter JSON</button>
-            <button class="btn-secondary" id="clearBtn">Effacer tout</button>
-        </div>
-
-        <div class="loader" id="loader">
-            <div class="spinner"></div>
-            <span>Génération des scénarios en cours...</span>
-        </div>
-
-        <div class="error-message" id="errorMessage"></div>
-
-        <div class="results" id="results">
-            <div class="results-header" id="resultsHeader" style="display: none;">
-                <h2>Scénarios générés</h2>
-                <span class="stats" id="stats"></span>
-            </div>
-            <div class="scenarios-grid" id="scenariosGrid"></div>
-            <div class="empty-state" id="emptyState">
-                <p>Aucun scénario généré</p>
-                <p>Entrez une description et cliquez sur "Générer"</p>
-            </div>
-        </div>
-
-        <footer>
-            TestPilot v1.0 - Générateur de scénarios de tests IA
-        </footer>
+    <div class="api-config">
+        <label for="apiKey">Clé API Anthropic</label>
+        <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off">
     </div>
 
-    <script>
-        const STORAGE_KEY = 'testpilot_scenarios';
-        const API_KEY_STORAGE = 'testpilot_api_key';
+    <div class="input-section">
+        <label>Type de source</label>
+        <div class="type-selector">
+            <label><input type="radio" name="sourceType" value="user-story" checked><span>User Story</span></label>
+            <label><input type="radio" name="sourceType" value="spec"><span>Spécification</span></label>
+            <label><input type="radio" name="sourceType" value="oral"><span>Description orale</span></label>
+            <label><input type="radio" name="sourceType" value="rule"><span>Règle de gestion</span></label>
+        </div>
+        <label for="sourceInput">Description / Spécification</label>
+        <textarea id="sourceInput" placeholder="Décrivez votre fonctionnalité, scénario ou règle de gestion..."></textarea>
+    </div>
 
-        const state = {
-            scenarios: [],
-            apiKey: ''
-        };
+    <div class="actions">
+        <button class="btn-primary" id="generateBtn">Générer les scénarios</button>
+        <button class="btn-success" id="acceptAllBtn" disabled>Tout accepter</button>
+        <button class="btn-secondary" id="exportBtn" disabled>Exporter JSON</button>
+        <button class="btn-secondary" id="clearBtn">Effacer tout</button>
+    </div>
 
-        const elements = {
-            apiKey: document.getElementById('apiKey'),
-            sourceInput: document.getElementById('sourceInput'),
-            sourceType: document.getElementsByName('sourceType'),
-            generateBtn: document.getElementById('generateBtn'),
-            acceptAllBtn: document.getElementById('acceptAllBtn'),
-            exportBtn: document.getElementById('exportBtn'),
-            clearBtn: document.getElementById('clearBtn'),
-            loader: document.getElementById('loader'),
-            errorMessage: document.getElementById('errorMessage'),
-            resultsHeader: document.getElementById('resultsHeader'),
-            stats: document.getElementById('stats'),
-            scenariosGrid: document.getElementById('scenariosGrid'),
-            emptyState: document.getElementById('emptyState')
-        };
+    <div class="loader" id="loader">
+        <div class="spinner"></div>
+        <span>Analyse et génération en cours...</span>
+    </div>
 
-        function loadFromStorage() {
-            const stored = localStorage.getItem(STORAGE_KEY);
-            if (stored) {
-                try {
-                    state.scenarios = JSON.parse(stored);
-                } catch (e) {
-                    state.scenarios = [];
-                }
-            }
+    <div class="error-message" id="errorMessage"></div>
 
-            const storedApiKey = localStorage.getItem(API_KEY_STORAGE);
-            if (storedApiKey) {
-                elements.apiKey.value = storedApiKey;
-            }
+    <!-- Bloc analyse de la source -->
+    <div class="analysis-block" id="analysisBlock">
+        <div class="analysis-title">Analyse de la source</div>
+        <div class="analysis-grid">
+            <div class="analysis-metric">
+                <div class="analysis-metric-label">Feature détectée</div>
+                <div class="analysis-metric-value" id="aFeature">—</div>
+            </div>
+            <div class="analysis-metric">
+                <div class="analysis-metric-label">Complexité estimée</div>
+                <div class="analysis-metric-value" id="aComplexity">—</div>
+            </div>
+            <div class="analysis-metric">
+                <div class="analysis-metric-label">Ambiguïtés</div>
+                <div class="analysis-metric-value" id="aAmbigCount">—</div>
+            </div>
+        </div>
+        <div class="callout-amber" id="ambigCallout">
+            <div class="callout-amber-title">Préconditions ambiguës détectées</div>
+            <ul id="ambigList"></ul>
+        </div>
+        <div class="callout-purple" id="regrCallout">
+            <div class="callout-purple-title">Risques de régression identifiés</div>
+            <ul id="regrList"></ul>
+        </div>
+    </div>
 
-            renderScenarios();
-        }
+    <div class="results" id="results">
+        <div class="results-header" id="resultsHeader" style="display:none;">
+            <h2>Scénarios générés</h2>
+            <span class="stats" id="stats"></span>
+        </div>
+        <div class="scenarios-grid" id="scenariosGrid"></div>
+        <div class="empty-state" id="emptyState">
+            <p>Aucun scénario généré</p>
+            <p>Entrez une description et cliquez sur "Générer"</p>
+        </div>
+    </div>
 
-        function saveToStorage() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.scenarios));
-            if (elements.apiKey.value) {
-                localStorage.setItem(API_KEY_STORAGE, elements.apiKey.value);
-            }
-        }
+    <footer>TestPilot v1.0 — Générateur de scénarios de tests IA</footer>
+</div>
 
-        function getSelectedType() {
-            for (const radio of elements.sourceType) {
-                if (radio.checked) return radio.value;
-            }
-            return 'user-story';
-        }
+<script>
+const STORAGE_KEY = 'testpilot_scenarios';
+const ANALYSIS_KEY = 'testpilot_analysis';
+const API_KEY_STORAGE = 'testpilot_api_key';
 
-        function showError(message) {
-            elements.errorMessage.textContent = message;
-            elements.errorMessage.classList.add('active');
-        }
+const state = { scenarios: [], analysis: null };
 
-        function hideError() {
-            elements.errorMessage.classList.remove('active');
-        }
+const el = {
+    apiKey:        document.getElementById('apiKey'),
+    sourceInput:   document.getElementById('sourceInput'),
+    sourceType:    document.getElementsByName('sourceType'),
+    generateBtn:   document.getElementById('generateBtn'),
+    acceptAllBtn:  document.getElementById('acceptAllBtn'),
+    exportBtn:     document.getElementById('exportBtn'),
+    clearBtn:      document.getElementById('clearBtn'),
+    loader:        document.getElementById('loader'),
+    errorMessage:  document.getElementById('errorMessage'),
+    resultsHeader: document.getElementById('resultsHeader'),
+    stats:         document.getElementById('stats'),
+    scenariosGrid: document.getElementById('scenariosGrid'),
+    emptyState:    document.getElementById('emptyState'),
+    analysisBlock: document.getElementById('analysisBlock'),
+    aFeature:      document.getElementById('aFeature'),
+    aComplexity:   document.getElementById('aComplexity'),
+    aAmbigCount:   document.getElementById('aAmbigCount'),
+    ambigCallout:  document.getElementById('ambigCallout'),
+    ambigList:     document.getElementById('ambigList'),
+    regrCallout:   document.getElementById('regrCallout'),
+    regrList:      document.getElementById('regrList'),
+};
 
-        function showLoader() {
-            elements.loader.classList.add('active');
-            elements.generateBtn.disabled = true;
-        }
+// ── Storage ──────────────────────────────────────────
+function loadFromStorage() {
+    try { state.scenarios = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { state.scenarios = []; }
+    try { state.analysis  = JSON.parse(localStorage.getItem(ANALYSIS_KEY)) || null; } catch { state.analysis = null; }
+    const savedKey = localStorage.getItem(API_KEY_STORAGE);
+    if (savedKey) el.apiKey.value = savedKey;
+    if (state.analysis) renderAnalysis(state.analysis);
+    renderScenarios();
+}
 
-        function hideLoader() {
-            elements.loader.classList.remove('active');
-            elements.generateBtn.disabled = false;
-        }
+function saveToStorage() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.scenarios));
+    if (state.analysis) localStorage.setItem(ANALYSIS_KEY, JSON.stringify(state.analysis));
+    if (el.apiKey.value) localStorage.setItem(API_KEY_STORAGE, el.apiKey.value);
+}
 
-        function buildPrompt(sourceType, sourceText) {
-            const typeLabels = {
-                'user-story': 'User Story',
-                'spec': 'Spécification fonctionnelle',
-                'oral': 'Description orale',
-                'rule': 'Règle de gestion'
-            };
+// ── UI helpers ────────────────────────────────────────
+function showError(msg) { el.errorMessage.textContent = msg; el.errorMessage.classList.add('active'); }
+function hideError()    { el.errorMessage.classList.remove('active'); }
+function showLoader()   { el.loader.classList.add('active'); el.generateBtn.disabled = true; }
+function hideLoader()   { el.loader.classList.remove('active'); el.generateBtn.disabled = false; }
+function esc(t)         { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
+function getType()      { for (const r of el.sourceType) if (r.checked) return r.value; return 'user-story'; }
 
-            return `Tu es un expert en tests logiciels. À partir de la source suivante (type: ${typeLabels[sourceType]}), génère des scénarios de tests au format JSON strict.
+// ── Analysis render ───────────────────────────────────
+function renderAnalysis(a) {
+    el.analysisBlock.classList.add('active');
+    el.aFeature.textContent = a.feature || '—';
 
-Source:
-${sourceText}
+    const cx = (a.complexity || 'simple').toLowerCase();
+    el.aComplexity.innerHTML = `<span class="complexity-badge complexity-${cx}">${cx}</span>`;
 
-Réponds UNIQUEMENT avec un JSON valide sans autre texte. Le JSON doit contenir un objet avec les clés suivantes:
-- "feature": string - feature/problématique détectée
-- "complexity": string - complexité estimée (simple/moyenne/complexe)
-- "ambiguities": array - liste des ambiguïtés identifiées
-- "regressionRisks": array - risques de régression potentiels
-- "scenarios": array - liste des scénarios, chacun contenant:
-  - "id": string (format: "SC-001", "SC-002", etc.)
-  - "type": string (functional/negative/edge-case/boundary)
-  - "priority": string (high/medium/low)
-  - "title": string
-  - "given": string
-  - "when": string
-  - "then": string
+    const ambigs = a.ambiguities || [];
+    el.aAmbigCount.textContent = ambigs.length === 0 ? 'Aucune' : `${ambigs.length} détectée${ambigs.length > 1 ? 's' : ''}`;
 
-Génère entre 3 et 8 scénarios pertinents.`;
-        }
+    if (ambigs.length > 0) {
+        el.ambigCallout.classList.add('active');
+        el.ambigList.innerHTML = ambigs.map(a => `<li>${esc(a)}</li>`).join('');
+    } else {
+        el.ambigCallout.classList.remove('active');
+    }
 
-        async function callAnthropicAPI(prompt) {
-            const apiKey = elements.apiKey.value.trim();
-            if (!apiKey) {
-                throw new Error('Veuillez entrer une clé API Anthropic');
-            }
+    const regrs = a.regressionRisks || [];
+    if (regrs.length > 0) {
+        el.regrCallout.classList.add('active');
+        el.regrList.innerHTML = regrs.map(r => `<li>${esc(r)}</li>`).join('');
+    } else {
+        el.regrCallout.classList.remove('active');
+    }
+}
 
-            const response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': apiKey,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
-                    max_tokens: 1000,
-                    messages: [
-                        {
-                            role: 'user',
-                            content: prompt
-                        }
-                    ]
-                })
-            });
+// ── Scenario render ───────────────────────────────────
+function renderScenarios() {
+    const accepted = state.scenarios.filter(s => s.accepted).length;
+    const total    = state.scenarios.length;
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error?.message || `Erreur API: ${response.status}`);
-            }
+    el.resultsHeader.style.display = total > 0 ? 'flex' : 'none';
+    el.stats.textContent = `${accepted} accepté${accepted > 1 ? 's' : ''} / ${total} total`;
 
-            const data = await response.json();
-            return data.content[0].text;
-        }
+    // FIX : disabled si 0 scénarios OU si tous déjà acceptés
+    el.acceptAllBtn.disabled = total === 0 || accepted === total;
+    el.exportBtn.disabled    = accepted === 0;
 
-        function parseResponse(text) {
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('Réponse API invalide - JSON non trouvé');
-            }
+    if (total === 0) {
+        el.emptyState.style.display = 'block';
+        el.scenariosGrid.innerHTML = '';
+        return;
+    }
+    el.emptyState.style.display = 'none';
 
-            const parsed = JSON.parse(jsonMatch[0]);
-
-            if (!parsed.scenarios || !Array.isArray(parsed.scenarios)) {
-                throw new Error('Format de réponse invalide - scénarios manquants');
-            }
-
-            return parsed;
-        }
-
-        async function generateScenarios() {
-            hideError();
-
-            const sourceText = elements.sourceInput.value.trim();
-            if (!sourceText) {
-                showError('Veuillez entrer une description');
-                return;
-            }
-
-            const apiKey = elements.apiKey.value.trim();
-            if (!apiKey) {
-                showError('Veuillez entrer votre clé API Anthropic');
-                return;
-            }
-
-            showLoader();
-
-            try {
-                const sourceType = getSelectedType();
-                const prompt = buildPrompt(sourceType, sourceText);
-                const responseText = await callAnthropicAPI(prompt);
-                const parsed = parseResponse(responseText);
-
-                const newScenarios = parsed.scenarios.map((s, index) => ({
-                    ...s,
-                    feature: parsed.feature,
-                    complexity: parsed.complexity,
-                    ambiguities: parsed.ambiguities || [],
-                    regressionRisks: parsed.regressionRisks || [],
-                    accepted: false,
-                    tempId: Date.now() + index
-                }));
-
-                state.scenarios = newScenarios;
-                saveToStorage();
-                renderScenarios();
-
-                elements.sourceInput.value = '';
-
-            } catch (error) {
-                showError(error.message || 'Erreur lors de la génération des scénarios');
-            } finally {
-                hideLoader();
-            }
-        }
-
-        function renderScenarios() {
-            const acceptedCount = state.scenarios.filter(s => s.accepted).length;
-            const totalCount = state.scenarios.length;
-
-            elements.resultsHeader.style.display = totalCount > 0 ? 'flex' : 'none';
-            elements.stats.textContent = `${acceptedCount} accepté(s) / ${totalCount} total`;
-            elements.acceptAllBtn.disabled = acceptedCount === totalCount || totalCount === 0;
-            elements.exportBtn.disabled = acceptedCount === 0;
-
-            if (totalCount === 0) {
-                elements.emptyState.style.display = 'block';
-                elements.scenariosGrid.innerHTML = '';
-                return;
-            }
-
-            elements.emptyState.style.display = 'none';
-
-            elements.scenariosGrid.innerHTML = state.scenarios.map((scenario, index) => `
-                <div class="scenario-card ${scenario.accepted ? 'accepted' : ''}" data-index="${index}">
-                    <div class="card-header">
-                        <div class="card-title">${escapeHtml(scenario.title)}</div>
-                        <div class="badges">
-                            <span class="badge badge-type ${scenario.type}">${scenario.type}</span>
-                            <span class="badge badge-priority ${scenario.priority}">${scenario.priority}</span>
-                        </div>
-                    </div>
-                    <div class="gwt-block">
-                        <div class="gwt-label">Given</div>
-                        <div class="gwt-text">${escapeHtml(scenario.given)}</div>
-                    </div>
-                    <div class="gwt-block">
-                        <div class="gwt-label">When</div>
-                        <div class="gwt-text">${escapeHtml(scenario.when)}</div>
-                    </div>
-                    <div class="gwt-block">
-                        <div class="gwt-label">Then</div>
-                        <div class="gwt-text">${escapeHtml(scenario.then)}</div>
-                    </div>
-                    <div class="card-actions">
-                        <button class="btn-sm ${scenario.accepted ? 'btn-secondary' : 'btn-success'}" 
-                                onclick="toggleAccept(${index})">
-                            ${scenario.accepted ? 'Retirer' : 'Accepter'}
-                        </button>
-                        <button class="btn-sm btn-secondary" onclick="showEditPrompt(${index})">
-                            Modifier
-                        </button>
-                        <button class="btn-sm btn-danger" onclick="deleteScenario(${index})">
-                            Supprimer
-                        </button>
-                    </div>
-                    <div class="edit-prompt" id="edit-${index}">
-                        <textarea id="edit-text-${index}">${escapeHtml(JSON.stringify(scenario, null, 2))}</textarea>
-                        <div class="edit-prompt-actions">
-                            <button class="btn-sm btn-primary" onclick="saveEdit(${index})">Enregistrer</button>
-                            <button class="btn-sm btn-secondary" onclick="hideEditPrompt(${index})">Annuler</button>
-                        </div>
-                    </div>
+    el.scenariosGrid.innerHTML = state.scenarios.map((sc, i) => `
+        <div class="scenario-card ${sc.accepted ? 'accepted' : ''}" id="card-${i}">
+            <div class="card-header">
+                <div>
+                    <div class="card-id">${esc(sc.id || ('SC-' + String(i+1).padStart(3,'0')))}</div>
+                    <div class="card-title">${esc(sc.title)}</div>
                 </div>
-            `).join('');
-        }
+                <div class="badges">
+                    <span class="badge badge-type ${esc(sc.type)}">${esc(sc.type)}</span>
+                    <span class="badge badge-priority ${esc(sc.priority)}">${esc(sc.priority)}</span>
+                </div>
+            </div>
+            <div class="gwt-block"><div class="gwt-label">Given</div><div class="gwt-text">${esc(sc.given)}</div></div>
+            <div class="gwt-block"><div class="gwt-label">When</div><div class="gwt-text">${esc(sc.when)}</div></div>
+            <div class="gwt-block"><div class="gwt-label">Then</div><div class="gwt-text">${esc(sc.then)}</div></div>
+            <div class="card-actions">
+                <button class="btn-sm ${sc.accepted ? 'btn-secondary' : 'btn-success'}" onclick="toggleAccept(${i})">
+                    ${sc.accepted ? '✓ Accepté — Retirer' : 'Accepter'}
+                </button>
+                <button class="btn-sm btn-secondary" onclick="toggleEdit(${i})">Modifier</button>
+                <button class="btn-sm btn-danger" onclick="deleteSc(${i})">Supprimer</button>
+            </div>
+            <div class="edit-form" id="edit-${i}">
+                <label>Titre</label>
+                <input type="text" id="ef-title-${i}" value="${esc(sc.title)}">
+                <label>Given</label>
+                <textarea id="ef-given-${i}">${esc(sc.given)}</textarea>
+                <label>When</label>
+                <textarea id="ef-when-${i}">${esc(sc.when)}</textarea>
+                <label>Then</label>
+                <textarea id="ef-then-${i}">${esc(sc.then)}</textarea>
+                <label>Priorité</label>
+                <select id="ef-prio-${i}">
+                    <option value="high"   ${sc.priority==='high'   ? 'selected':''}>High — critique</option>
+                    <option value="medium" ${sc.priority==='medium' ? 'selected':''}>Medium — normale</option>
+                    <option value="low"    ${sc.priority==='low'    ? 'selected':''}>Low — basse</option>
+                </select>
+                <div class="edit-form-actions">
+                    <button class="btn-sm btn-primary" onclick="saveEdit(${i})">Enregistrer</button>
+                    <button class="btn-sm btn-secondary" onclick="toggleEdit(${i})">Annuler</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+// ── API ────────────────────────────────────────────────
+function buildPrompt(type, text) {
+    const labels = { 'user-story': 'User Story', spec: 'Spécification fonctionnelle', oral: 'Description orale', rule: 'Règle de gestion' };
+    return `Tu es un expert QA senior. Analyse la source suivante et génère des scénarios de tests structurés.
 
-        function toggleAccept(index) {
-            state.scenarios[index].accepted = !state.scenarios[index].accepted;
-            saveToStorage();
-            renderScenarios();
-        }
+SOURCE (type: ${labels[type]}) :
+${text}
 
-        function showEditPrompt(index) {
-            const editDiv = document.getElementById(`edit-${index}`);
-            editDiv.classList.add('active');
-        }
+Réponds UNIQUEMENT avec un JSON valide, sans markdown, sans backticks.
+{
+  "feature": "string — feature principale testée, max 5 mots",
+  "complexity": "simple | moyenne | complexe",
+  "ambiguities": ["string — précondition manquante ou ambiguë"],
+  "regressionRisks": ["string — risque de régression sur feature adjacente"],
+  "scenarios": [
+    {
+      "id": "SC-001",
+      "type": "functional | negative | edge-case | boundary",
+      "priority": "high | medium | low",
+      "title": "string",
+      "given": "string",
+      "when": "string",
+      "then": "string"
+    }
+  ]
+}
+Génère entre 3 et 8 scénarios. Inclus obligatoirement : au moins 1 cas nominal, 1 cas négatif, 1 edge-case.`;
+}
 
-        function hideEditPrompt(index) {
-            const editDiv = document.getElementById(`edit-${index}`);
-            editDiv.classList.remove('active');
-        }
+async function generate() {
+    hideError();
+    const text = el.sourceInput.value.trim();
+    if (!text) { showError('Veuillez entrer une description.'); return; }
+    const key = el.apiKey.value.trim();
+    if (!key)  { showError('Veuillez entrer votre clé API Anthropic.'); return; }
 
-        function saveEdit(index) {
-            const editText = document.getElementById(`edit-text-${index}`).value;
-            try {
-                const updated = JSON.parse(editText);
-                state.scenarios[index] = { ...state.scenarios[index], ...updated };
-                saveToStorage();
-                renderScenarios();
-            } catch (e) {
-                showError('JSON invalide - Veuillez vérifier la syntaxe');
-            }
-        }
-
-        function deleteScenario(index) {
-            state.scenarios.splice(index, 1);
-            saveToStorage();
-            renderScenarios();
-        }
-
-        function acceptAll() {
-            state.scenarios.forEach(s => s.accepted = true);
-            saveToStorage();
-            renderScenarios();
-        }
-
-        function exportJSON() {
-            const acceptedScenarios = state.scenarios
-                .filter(s => s.accepted)
-                .map(({ accepted, tempId, ...rest }) => rest);
-
-            if (acceptedScenarios.length === 0) {
-                showError('Aucun scénario accepté à exporter');
-                return;
-            }
-
-            const json = JSON.stringify(acceptedScenarios, null, 2);
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `testpilot-scenarios-${new Date().toISOString().slice(0,10)}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }
-
-        function clearAll() {
-            if (confirm('Effacer tous les scénarios ?')) {
-                state.scenarios = [];
-                saveToStorage();
-                renderScenarios();
-                hideError();
-            }
-        }
-
-        elements.generateBtn.addEventListener('click', generateScenarios);
-        elements.acceptAllBtn.addEventListener('click', acceptAll);
-        elements.exportBtn.addEventListener('click', exportJSON);
-        elements.clearBtn.addEventListener('click', clearAll);
-
-        elements.apiKey.addEventListener('input', () => {
-            localStorage.setItem(API_KEY_STORAGE, elements.apiKey.value);
+    showLoader();
+    try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': key,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                messages: [{ role: 'user', content: buildPrompt(getType(), text) }]
+            })
         });
 
-        loadFromStorage();
-    </script>
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error?.message || `Erreur API : ${res.status}`);
+        }
+
+        const data = await res.json();
+        const raw  = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error('Réponse IA invalide — JSON non trouvé.');
+        const parsed = JSON.parse(match[0]);
+        if (!Array.isArray(parsed.scenarios)) throw new Error('Format invalide — scénarios manquants.');
+
+        state.analysis  = { feature: parsed.feature, complexity: parsed.complexity, ambiguities: parsed.ambiguities || [], regressionRisks: parsed.regressionRisks || [] };
+        state.scenarios = parsed.scenarios.map((s, i) => ({ ...s, accepted: false, _id: Date.now() + i }));
+
+        saveToStorage();
+        renderAnalysis(state.analysis);
+        renderScenarios();
+        el.sourceInput.value = '';
+
+    } catch(e) {
+        showError(e.message || 'Erreur lors de la génération.');
+    } finally {
+        hideLoader();
+    }
+}
+
+// ── Actions ────────────────────────────────────────────
+function toggleAccept(i) { state.scenarios[i].accepted = !state.scenarios[i].accepted; saveToStorage(); renderScenarios(); }
+function deleteSc(i)      { state.scenarios.splice(i, 1); saveToStorage(); renderScenarios(); }
+
+function toggleEdit(i) {
+    const form = document.getElementById(`edit-${i}`);
+    form.classList.toggle('active');
+}
+
+function saveEdit(i) {
+    const title = document.getElementById(`ef-title-${i}`).value.trim();
+    const given = document.getElementById(`ef-given-${i}`).value.trim();
+    const when  = document.getElementById(`ef-when-${i}`).value.trim();
+    const then_ = document.getElementById(`ef-then-${i}`).value.trim();
+    const prio  = document.getElementById(`ef-prio-${i}`).value;
+    if (!title || !given || !when || !then_) { showError('Tous les champs sont requis.'); return; }
+    state.scenarios[i] = { ...state.scenarios[i], title, given, when, then: then_, priority: prio };
+    saveToStorage();
+    renderScenarios();
+}
+
+function acceptAll() { state.scenarios.forEach(s => s.accepted = true); saveToStorage(); renderScenarios(); }
+
+function exportJSON() {
+    const toExport = state.scenarios.filter(s => s.accepted).map(({ accepted, _id, ...rest }) => rest);
+    if (!toExport.length) { showError('Aucun scénario accepté.'); return; }
+    const blob = new Blob([JSON.stringify(toExport, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `testpilot-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function clearAll() {
+    if (!confirm('Effacer tous les scénarios et l\'analyse ?')) return;
+    state.scenarios = []; state.analysis = null;
+    localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(ANALYSIS_KEY);
+    el.analysisBlock.classList.remove('active');
+    renderScenarios(); hideError();
+}
+
+// ── Event listeners ────────────────────────────────────
+el.generateBtn.addEventListener('click', generate);
+el.acceptAllBtn.addEventListener('click', acceptAll);
+el.exportBtn.addEventListener('click', exportJSON);
+el.clearBtn.addEventListener('click', clearAll);
+el.apiKey.addEventListener('input', () => localStorage.setItem(API_KEY_STORAGE, el.apiKey.value));
+
+loadFromStorage();
+</script>
 </body>
 </html>
