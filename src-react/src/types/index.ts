@@ -153,28 +153,76 @@ export interface ClickUpList {
 }
 
 // ── P2.2 COMEP ───────────────────────────────────────
+// Structure réelle retournée par GET /api/projects/:id/comep-report
 export interface ComepReport {
-  project_id: number;
-  project_name: string;
   generated_at: string;
-  confidence_score: number;
-  confidence_level: 'ÉLEVÉ' | 'MOYEN' | 'FAIBLE' | 'CRITIQUE';
-  components: {
-    coverage: number;
-    traceability: number;
-    pass_rate: number;
-    critical_failures: number;
+  project: { id: number; name: string; [key: string]: unknown };
+  score: {
+    value: number;
+    level: 'ÉLEVÉ' | 'MOYEN' | 'FAIBLE' | 'CRITIQUE';
+    color: string;
+    components: {
+      coverage: number;          // 0-100 (représente /30)
+      traceability: number;      // 0-100 (représente /20)
+      pass_rate: number;         // 0-100 (représente /30)
+      critical_coverage: number; // 0-100 (représente /20)
+    };
   };
-  risks: { level: 'HIGH' | 'MEDIUM'; description: string }[];
-  recommendations: { priority: number; text: string }[];
-  stats: {
-    total: number;
+  summary: {
+    totalScenarios: number;
     accepted: number;
     tnr: number;
-    pass_rate: number;
-    coverage_pct: number;
-    traceability_pct: number;
+    withRef: number;
+    highPriority: number;
+    highAccepted: number;
+    coverageRate: number;
+    traceRate: number;
+    totalCampaigns: number;
+    lastPassRate: number | null;
+    lastLeakRate: number | null;
   };
+  features: {
+    name: string;
+    total: number;
+    accepted: number;
+    high: number;
+    coverage_pct: number;
+  }[];
+  residualRisks: {
+    id?: string;
+    title?: string;
+    feature?: string;
+    reason: string;
+    level: 'HIGH' | 'MEDIUM';
+    comment?: string | null;
+  }[];
+  trend: {
+    name: string;
+    date: string;
+    pass_rate: number;
+    leak_rate: number;
+    total: number;
+    pass: number;
+    fail: number;
+    blocked: number;
+  }[];
+  recommendations: { priority: string; text: string }[];
+  lastCampaign: {
+    name: string;
+    date: string;
+    total: number;
+    pass: number;
+    fail: number;
+    blocked: number;
+    skipped: number;
+  } | null;
+  lastAnalysis: {
+    feature_detected: string;
+    complexity: string;
+    ambiguities: string[];
+    regression_risks: string[];
+    date: string;
+  } | null;
 }
 
 // ── P3.1 Utilisateurs / Rôles ────────────────────────

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useProject } from '../lib/hooks';
 import { comepApi } from '../lib/api';
 import type { ComepReport } from '../types';
-import { ShieldCheck, AlertTriangle, Download, RefreshCw } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Download, RefreshCw, TrendingUp } from 'lucide-react';
 
 function GaugeCanvas({ score }: { score: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -18,15 +18,13 @@ function GaugeCanvas({ score }: { score: number }) {
     const cx = W / 2, cy = H - 10, r = 90;
     const startAngle = Math.PI, endAngle = 2 * Math.PI;
 
-    // BG arc
     ctx.beginPath();
     ctx.arc(cx, cy, r, startAngle, endAngle);
     ctx.strokeStyle = 'rgba(255,255,255,0.07)';
     ctx.lineWidth = 16;
     ctx.stroke();
 
-    // Color arc
-    const color = score >= 75 ? '#9ece6a' : score >= 50 ? '#e0af68' : score >= 25 ? '#f7768e' : '#bb9af7';
+    const color = score >= 80 ? '#9ece6a' : score >= 60 ? '#e0af68' : score >= 40 ? '#f7768e' : '#bb9af7';
     const angle = startAngle + (score / 100) * Math.PI;
     ctx.beginPath();
     ctx.arc(cx, cy, r, startAngle, angle);
@@ -35,7 +33,6 @@ function GaugeCanvas({ score }: { score: number }) {
     ctx.lineCap = 'round';
     ctx.stroke();
 
-    // Score text
     ctx.font = 'bold 32px sans-serif';
     ctx.fillStyle = color;
     ctx.textAlign = 'center';
@@ -81,15 +78,16 @@ export function Comep() {
       'FAIBLE':   '#f7768e',
       'CRITIQUE': '#bb9af7',
     };
+    const projectName = report.project?.name ?? 'Projet';
     const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Rapport COMEP — ${report.project_name}</title>
+<title>Rapport COMEP — ${projectName}</title>
 <style>
   body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; }
   h1 { color: #4a7cf7; }
-  .score { font-size: 3rem; font-weight: 700; color: ${levelColor[report.confidence_level] || '#4a7cf7'}; }
+  .score { font-size: 3rem; font-weight: 700; color: ${levelColor[report.score.level] || '#4a7cf7'}; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
   .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
   .risk-high { color: #d9534f; font-weight: bold; }
@@ -98,17 +96,17 @@ export function Comep() {
 </style>
 </head>
 <body>
-<h1>Rapport COMEP — ${report.project_name}</h1>
+<h1>Rapport COMEP — ${projectName}</h1>
 <p>Généré le ${new Date(report.generated_at).toLocaleDateString('fr-FR')}</p>
-<div class="score">${report.confidence_score}/100 — ${report.confidence_level}</div>
+<div class="score">${report.score.value}/100 — ${report.score.level}</div>
 <div class="grid">
-  <div class="card"><strong>Couverture</strong><br>${Math.round(report.components.coverage)}/30</div>
-  <div class="card"><strong>Traçabilité</strong><br>${Math.round(report.components.traceability)}/20</div>
-  <div class="card"><strong>Taux Pass</strong><br>${Math.round(report.components.pass_rate)}/30</div>
-  <div class="card"><strong>Critiques</strong><br>${Math.round(report.components.critical_failures)}/20</div>
+  <div class="card"><strong>Couverture</strong><br>${report.score.components.coverage}/100 → max 30 pts</div>
+  <div class="card"><strong>Traçabilité</strong><br>${report.score.components.traceability}/100 → max 20 pts</div>
+  <div class="card"><strong>Taux Pass</strong><br>${report.score.components.pass_rate}/100 → max 30 pts</div>
+  <div class="card"><strong>Critiques couverts</strong><br>${report.score.components.critical_coverage}/100 → max 20 pts</div>
 </div>
 <h2>Risques résiduels</h2>
-${report.risks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 'risk-medium'}">[${r.level}] ${r.description}</p>`).join('')}
+${report.residualRisks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 'risk-medium'}">[${r.level}] ${r.reason}${r.title ? ` — ${r.title}` : ''}</p>`).join('')}
 <h2>Recommandations</h2>
 <ol>${report.recommendations.map(r => `<li>${r.text}</li>`).join('')}</ol>
 </body></html>`;
@@ -116,7 +114,7 @@ ${report.risks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 'risk-me
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `rapport-comep-${report.project_name.replace(/\s+/g, '-')}.html`;
+    a.download = `rapport-comep-${projectName.replace(/\s+/g, '-')}.html`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -167,54 +165,53 @@ ${report.risks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 'risk-me
         <>
           {/* Score global */}
           <div className="panel mb-5 text-center">
-            <GaugeCanvas score={report.confidence_score} />
+            <GaugeCanvas score={report.score.value} />
             <div className="mt-2 font-bold text-lg"
-              style={{ color: levelColors[report.confidence_level] || 'var(--accent)' }}>
-              Niveau de confiance : {report.confidence_level}
+              style={{ color: levelColors[report.score.level] || 'var(--accent)' }}>
+              Niveau de confiance : {report.score.level}
             </div>
           </div>
 
-          {/* Composantes */}
+          {/* Composantes du score */}
           <div className="panel mb-5">
-            <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Composantes du score</div>
+            <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>
+              Composantes du score
+            </div>
             <div className="space-y-3">
               {[
-                { label: 'Couverture fonctionnelle', value: report.components.coverage,          max: 30 },
-                { label: 'Traçabilité exigences',    value: report.components.traceability,      max: 20 },
-                { label: 'Taux de réussite',         value: report.components.pass_rate,         max: 30 },
-                { label: 'Absence de critiques',     value: report.components.critical_failures, max: 20 },
-              ].map(({ label, value, max }) => {
-                const pct = Math.round((value / max) * 100);
-                return (
-                  <div key={label}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>{label}</span>
-                      <span className="font-semibold" style={{ color: 'var(--accent)' }}>
-                        {Math.round(value)}/{max}
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
-                      <div className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${pct}%`,
-                          background: pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)',
-                        }} />
-                    </div>
+                { label: 'Couverture fonctionnelle', pct: report.score.components.coverage,          pts: Math.round(report.score.components.coverage * 0.30), max: 30 },
+                { label: 'Traçabilité exigences',    pct: report.score.components.traceability,      pts: Math.round(report.score.components.traceability * 0.20), max: 20 },
+                { label: 'Taux de réussite',         pct: report.score.components.pass_rate,         pts: Math.round(report.score.components.pass_rate * 0.30), max: 30 },
+                { label: 'Couverture critiques',     pct: report.score.components.critical_coverage, pts: Math.round(report.score.components.critical_coverage * 0.20), max: 20 },
+              ].map(({ label, pct, pts, max }) => (
+                <div key={label}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>{label}</span>
+                    <span className="font-semibold" style={{ color: 'var(--accent)' }}>
+                      {pts}/{max} pts
+                    </span>
                   </div>
-                );
-              })}
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
+                    <div className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        background: pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)',
+                      }} />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Stats */}
+          {/* Stats résumé */}
           <div className="grid grid-cols-3 gap-3 mb-5">
             {[
-              { label: 'Scénarios total',    value: report.stats.total,                                      color: 'var(--text)' },
-              { label: 'Taux d\'acceptation', value: `${Math.round(report.stats.coverage_pct)}%`,            color: 'var(--accent)' },
-              { label: 'Taux pass',          value: `${Math.round(report.stats.pass_rate)}%`,               color: 'var(--success)' },
-              { label: 'TNR',               value: report.stats.tnr,                                        color: 'var(--purple)' },
-              { label: 'Traçabilité',        value: `${Math.round(report.stats.traceability_pct)}%`,        color: 'var(--info)' },
-              { label: 'Acceptés',           value: report.stats.accepted,                                  color: 'var(--success)' },
+              { label: 'Scénarios total',     value: report.summary.totalScenarios,                                              color: 'var(--text)' },
+              { label: 'Taux couverture',     value: `${report.summary.coverageRate}%`,                                          color: 'var(--accent)' },
+              { label: 'Taux pass (dernière)',value: report.summary.lastPassRate !== null ? `${report.summary.lastPassRate}%` : '—', color: 'var(--success)' },
+              { label: 'TNR',                 value: report.summary.tnr,                                                         color: 'var(--purple)' },
+              { label: 'Traçabilité',         value: `${report.summary.traceRate}%`,                                             color: 'var(--info)' },
+              { label: 'Acceptés',            value: report.summary.accepted,                                                    color: 'var(--success)' },
             ].map(({ label, value, color }) => (
               <div key={label} className="rounded-lg p-3" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
                 <div className="text-[0.68rem] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-dim)' }}>{label}</div>
@@ -223,15 +220,43 @@ ${report.risks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 'risk-me
             ))}
           </div>
 
-          {/* Risques */}
-          {report.risks.length > 0 && (
+          {/* Tendance campagnes */}
+          {report.trend.length > 0 && (
+            <div className="panel mb-5">
+              <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--text-dim)' }}>
+                <TrendingUp size={13} />
+                <span className="text-xs font-bold uppercase tracking-wide">Tendance (3 dernières campagnes)</span>
+              </div>
+              <div className="space-y-2">
+                {report.trend.map((t, i) => (
+                  <div key={i} className="flex items-center gap-3 text-sm">
+                    <span className="flex-1 truncate" style={{ color: 'var(--text-muted)' }}>{t.name}</span>
+                    <div className="w-32 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
+                      <div className="h-full rounded-full"
+                        style={{
+                          width: `${t.pass_rate}%`,
+                          background: t.pass_rate >= 80 ? 'var(--success)' : t.pass_rate >= 50 ? 'var(--warning)' : 'var(--danger)',
+                        }} />
+                    </div>
+                    <span className="font-semibold w-10 text-right"
+                      style={{ color: t.pass_rate >= 80 ? 'var(--success)' : t.pass_rate >= 50 ? 'var(--warning)' : 'var(--danger)' }}>
+                      {t.pass_rate}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Risques résiduels */}
+          {report.residualRisks.length > 0 && (
             <div className="panel mb-5">
               <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--danger)' }}>
                 <AlertTriangle size={14} />
-                <span className="text-xs font-bold uppercase tracking-wide">Risques résiduels</span>
+                <span className="text-xs font-bold uppercase tracking-wide">Risques résiduels ({report.residualRisks.length})</span>
               </div>
               <div className="space-y-2">
-                {report.risks.map((risk, i) => (
+                {report.residualRisks.map((risk, i) => (
                   <div key={i} className="flex items-start gap-2.5 text-sm p-2.5 rounded"
                     style={{
                       background: risk.level === 'HIGH' ? 'var(--danger-bg)' : 'var(--warning-bg)',
@@ -244,9 +269,16 @@ ${report.risks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 'risk-me
                       }}>
                       {risk.level}
                     </span>
-                    <span style={{ color: risk.level === 'HIGH' ? 'var(--danger)' : 'var(--warning)' }}>
-                      {risk.description}
-                    </span>
+                    <div>
+                      <div style={{ color: risk.level === 'HIGH' ? 'var(--danger)' : 'var(--warning)' }}>
+                        {risk.reason}
+                      </div>
+                      {risk.title && (
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                          {risk.id && <code className="mr-1">{risk.id}</code>}{risk.title}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -256,7 +288,9 @@ ${report.risks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 'risk-me
           {/* Recommandations */}
           {report.recommendations.length > 0 && (
             <div className="panel">
-              <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Recommandations</div>
+              <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>
+                Recommandations
+              </div>
               <ol className="space-y-2">
                 {report.recommendations.map((rec, i) => (
                   <li key={i} className="flex items-start gap-2.5 text-sm">
