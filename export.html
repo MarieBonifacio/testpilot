@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TestPilot — Export</title>
+    <style>
+        :root {
+            --primary: #3B6D11; --primary-dark: #2d5309;
+            --bg: #ffffff; --bg-alt: #f8f9fa;
+            --text: #212529; --text-muted: #6c757d; --border: #dee2e6;
+            --success: #28a745; --danger: #dc3545; --warning: #e8a020;
+            --purple: #534AB7; --purple-light: #EEEDFE;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-alt); color: var(--text); min-height: 100vh; }
+        .nav { background: white; border-bottom: 2px solid var(--primary); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+        .nav-brand { color: var(--primary); font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; text-decoration: none; }
+        .nav-brand::before { content: '✈'; }
+        .nav-links { display: flex; gap: 4px; }
+        .nav-link { padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; font-weight: 500; text-decoration: none; color: var(--text-muted); transition: all .15s; }
+        .nav-link:hover { background: var(--bg-alt); color: var(--text); }
+        .nav-link.active { background: rgba(59,109,17,0.1); color: var(--primary); }
+        .container { max-width: 860px; margin: 0 auto; padding: 28px 20px; }
+        h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; }
+        .sub { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 28px; }
+
+        /* Format cards */
+        .formats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 32px; }
+        .fmt-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 22px; cursor: pointer; transition: all .15s; }
+        .fmt-card:hover { border-color: var(--primary); }
+        .fmt-card.selected { border: 2px solid var(--primary); background: rgba(59,109,17,0.04); }
+        .fmt-icon { font-size: 1.8rem; margin-bottom: 10px; }
+        .fmt-title { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+        .fmt-desc { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; }
+        .fmt-badge { display: inline-block; font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; background: #d4edda; color: #155724; font-weight: 600; margin-top: 8px; }
+
+        /* Options */
+        .options-panel { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 24px; }
+        .opt-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-bottom: 14px; }
+        .opt-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 0.9rem; cursor: pointer; }
+        .opt-row:last-child { margin-bottom: 0; }
+        .opt-row input { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; }
+        .opt-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+        .opt-field label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+        .opt-field input[type="text"] { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; width: 100%; }
+        .opt-field input[type="text"]:focus { outline: none; border-color: var(--primary); }
+
+        /* Preview */
+        .preview-panel { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 24px; display: none; }
+        .preview-panel.active { display: block; }
+        .preview-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+        .preview-frame { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+        iframe { width: 100%; height: 500px; border: none; display: block; }
+
+        /* Actions */
+        .export-actions { display: flex; gap: 12px; }
+        .btn-primary { padding: 13px 28px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-secondary { padding: 13px 22px; background: white; border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: .15s; }
+        .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* Empty */
+        .empty { text-align: center; padding: 60px 20px; background: white; border: 1px solid var(--border); border-radius: 12px; color: var(--text-muted); }
+        .empty a { color: var(--primary); text-decoration: none; font-weight: 600; }
+
+        @media (max-width: 600px) { .formats { grid-template-columns: 1fr; } .nav-links { display: none; } }
+    </style>
+</head>
+<body>
+<nav class="nav">
+    <a class="nav-brand" href="index.html">TestPilot</a>
+    <div class="nav-links">
+        <a class="nav-link" href="index.html">Rédaction</a>
+        <a class="nav-link" href="dashboard.html">Dashboard</a>
+        <a class="nav-link" href="campagne.html">Campagne</a>
+        <a class="nav-link active" href="export.html">Export</a>
+    </div>
+</nav>
+
+<div class="container">
+    <h2>Générer un livrable</h2>
+    <p class="sub">Produit un rapport autonome prêt à partager — aucun outil requis pour le lire.</p>
+
+    <div id="appContent"></div>
+</div>
+
+<script>
+const STORAGE_KEY  = 'testpilot_scenarios';
+const ANALYSIS_KEY = 'testpilot_analysis';
+const SESSION_KEY  = 'testpilot_session';
+
+function esc(t) { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
+
+let scenarios = [], analysis = null, session = null;
+let selectedFormat = 'html-full';
+
+function load() {
+    try { scenarios = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { scenarios = []; }
+    try { analysis  = JSON.parse(localStorage.getItem(ANALYSIS_KEY)); } catch {}
+    try { session   = JSON.parse(localStorage.getItem(SESSION_KEY)); } catch {}
+}
+
+function init() {
+    load();
+    const app = document.getElementById('appContent');
+
+    if (scenarios.length === 0) {
+        app.innerHTML = `<div class="empty">
+            <div style="font-size:2rem;margin-bottom:12px;">◎</div>
+            <p style="font-weight:600;margin-bottom:6px;">Aucun scénario disponible</p>
+            <p>Génère et accepte des scénarios dans <a href="index.html">la vue Rédaction</a> avant d'exporter.</p>
+        </div>`;
+        return;
+    }
+
+    const accepted = scenarios.filter(s => s.accepted).length;
+    const hasSession = session && session.results && session.results.length > 0;
+
+    app.innerHTML = `
+        <div class="formats">
+            <div class="fmt-card selected" onclick="selectFormat('html-full', this)">
+                <div class="fmt-icon">📄</div>
+                <div class="fmt-title">Rapport complet HTML</div>
+                <div class="fmt-desc">Scénarios + résultats de campagne + métriques. Lisible dans n'importe quel navigateur.</div>
+                <span class="fmt-badge">Recommandé</span>
+            </div>
+            <div class="fmt-card" onclick="selectFormat('html-scenarios', this)">
+                <div class="fmt-icon">📋</div>
+                <div class="fmt-title">Cahier de tests HTML</div>
+                <div class="fmt-desc">Scénarios uniquement — sans résultats. Idéal avant la campagne ou pour livraison au client.</div>
+            </div>
+            <div class="fmt-card" onclick="selectFormat('json', this)">
+                <div class="fmt-icon">🔗</div>
+                <div class="fmt-title">Export JSON brut</div>
+                <div class="fmt-desc">Données structurées — pour import dans TestRail, Xray, Squash TM ou versioning Git.</div>
+            </div>
+            <div class="fmt-card" onclick="selectFormat('json-results', this)">
+                <div class="fmt-icon">📊</div>
+                <div class="fmt-title">Résultats de campagne JSON</div>
+                <div class="fmt-desc">Résultats d'exécution horodatés — pour archivage, KPIs ou reporting automatisé.</div>
+                ${!hasSession ? '<div style="font-size:0.8rem;color:var(--warning);margin-top:6px;">⚠ Aucune campagne exécutée</div>' : ''}
+            </div>
+        </div>
+
+        <div class="options-panel">
+            <div class="opt-title">Options du rapport</div>
+            <div class="opt-field">
+                <label>Nom du projet / mission</label>
+                <input type="text" id="optProject" placeholder="Ex : Carter-Cash — Recette ATHENA Q2 2026">
+            </div>
+            <div class="opt-field">
+                <label>Auteur</label>
+                <input type="text" id="optAuthor" placeholder="Ex : Clarisse D. — Acteam-IT">
+            </div>
+            <label class="opt-row">
+                <input type="checkbox" id="optAcceptedOnly" checked>
+                <span>Inclure uniquement les scénarios acceptés (${accepted} / ${scenarios.length})</span>
+            </label>
+            <label class="opt-row">
+                <input type="checkbox" id="optShowAnalysis" checked>
+                <span>Inclure l'analyse de la source (feature, complexité, ambiguïtés)</span>
+            </label>
+        </div>
+
+        <div class="preview-panel" id="previewPanel">
+            <div class="preview-title">
+                <span>Aperçu</span>
+                <span style="font-weight:400;font-size:0.8rem;color:var(--text-muted)">Le fichier téléchargé est identique</span>
+            </div>
+            <div class="preview-frame"><iframe id="previewFrame"></iframe></div>
+        </div>
+
+        <div class="export-actions">
+            <button class="btn-primary" onclick="generate()">Générer et télécharger</button>
+            <button class="btn-secondary" onclick="preview()">Aperçu</button>
+        </div>`;
+}
+
+function selectFormat(fmt, el) {
+    selectedFormat = fmt;
+    document.querySelectorAll('.fmt-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+}
+
+function getOptions() {
+    return {
+        project:      document.getElementById('optProject')?.value.trim() || 'TestPilot',
+        author:       document.getElementById('optAuthor')?.value.trim() || '',
+        acceptedOnly: document.getElementById('optAcceptedOnly')?.checked ?? true,
+        showAnalysis: document.getElementById('optShowAnalysis')?.checked ?? true,
+    };
+}
+
+function buildHTMLReport(scenariosToExport, opts, includeResults) {
+    const date = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const accepted = scenariosToExport.filter(s => s.accepted).length;
+    const total    = scenariosToExport.length;
+
+    // Résultats de campagne
+    let resultsMap = {};
+    if (includeResults && session?.results) {
+        scenarios.forEach((sc, i) => { if (session.results[i]) resultsMap[sc.id || i] = session.results[i]; });
+    }
+
+    const passCount    = Object.values(resultsMap).filter(r => r.status === 'pass').length;
+    const failCount    = Object.values(resultsMap).filter(r => r.status === 'fail').length;
+    const blockedCount = Object.values(resultsMap).filter(r => r.status === 'blocked').length;
+    const hasResults   = includeResults && Object.keys(resultsMap).length > 0;
+
+    const statusBadge = (status) => {
+        const map = { pass: ['#d4edda','#155724','PASS'], fail: ['#f8d7da','#721c24','FAIL'], blocked: ['#EEEDFE','#534AB7','BLQ'], skipped: ['#f8f9fa','#6c757d','—'] };
+        const [bg, color, label] = map[status] || map.skipped;
+        return `<span style="background:${bg};color:${color};padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:700;">${label}</span>`;
+    };
+
+    const scCards = scenariosToExport.map((sc, i) => {
+        const key = sc.id || i;
+        const r   = resultsMap[key];
+        const typeColors = { functional: '#d4edda', negative: '#f8d7da', 'edge-case': '#d1ecf1', boundary: '#EEEDFE' };
+        const prioColors = { high: '#f8d7da', medium: '#fff3cd', low: '#d4edda' };
+        const typeTxt    = { functional: '#155724', negative: '#721c24', 'edge-case': '#0c5460', boundary: '#534AB7' };
+        const prioTxt    = { high: '#721c24', medium: '#856404', low: '#155724' };
+
+        return `
+        <div style="border:1px solid #dee2e6;border-radius:10px;padding:20px;margin-bottom:16px;page-break-inside:avoid;${r && r.status === 'fail' ? 'border-left:4px solid #dc3545;' : r && r.status === 'pass' ? 'border-left:4px solid #28a745;' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:10px;flex-wrap:wrap;">
+                <div>
+                    <div style="font-family:monospace;font-size:0.72rem;color:#6c757d;margin-bottom:3px;">${esc(sc.id || ('SC-'+String(i+1).padStart(3,'0')))}</div>
+                    <div style="font-weight:700;font-size:1rem;">${esc(sc.title)}</div>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                    <span style="background:${typeColors[sc.type]||'#f8f9fa'};color:${typeTxt[sc.type]||'#212529'};padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;text-transform:uppercase;">${esc(sc.type)}</span>
+                    <span style="background:${prioColors[sc.priority]||'#f8f9fa'};color:${prioTxt[sc.priority]||'#212529'};padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;text-transform:uppercase;">${esc(sc.priority)}</span>
+                    ${hasResults ? statusBadge(r?.status || 'skipped') : ''}
+                </div>
+            </div>
+            <div style="display:grid;gap:10px;margin-bottom:${r?.comment ? '10px' : '0'};">
+                <div style="border-left:3px solid #17a2b8;padding-left:12px;">
+                    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;color:#6c757d;margin-bottom:3px;">Given</div>
+                    <div style="font-size:0.9rem;">${esc(sc.given)}</div>
+                </div>
+                <div style="border-left:3px solid #e8a020;padding-left:12px;">
+                    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;color:#6c757d;margin-bottom:3px;">When</div>
+                    <div style="font-size:0.9rem;">${esc(sc.when)}</div>
+                </div>
+                <div style="border-left:3px solid #3B6D11;padding-left:12px;">
+                    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;color:#6c757d;margin-bottom:3px;">Then</div>
+                    <div style="font-size:0.9rem;">${esc(sc.then)}</div>
+                </div>
+            </div>
+            ${r?.comment ? `<div style="margin-top:10px;padding:8px 12px;background:#f8f9fa;border-radius:6px;font-size:0.85rem;color:#6c757d;font-style:italic;">💬 ${esc(r.comment)}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    const metricsHTML = hasResults ? `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;">
+            <div style="background:#d4edda;border-radius:8px;padding:14px;text-align:center;">
+                <div style="font-size:1.8rem;font-weight:700;color:#155724;">${passCount}</div>
+                <div style="font-size:0.8rem;color:#155724;">Pass</div>
+            </div>
+            <div style="background:#f8d7da;border-radius:8px;padding:14px;text-align:center;">
+                <div style="font-size:1.8rem;font-weight:700;color:#721c24;">${failCount}</div>
+                <div style="font-size:0.8rem;color:#721c24;">Fail</div>
+            </div>
+            <div style="background:#EEEDFE;border-radius:8px;padding:14px;text-align:center;">
+                <div style="font-size:1.8rem;font-weight:700;color:#534AB7;">${blockedCount}</div>
+                <div style="font-size:0.8rem;color:#534AB7;">Bloqué</div>
+            </div>
+            <div style="background:#fff3cd;border-radius:8px;padding:14px;text-align:center;">
+                <div style="font-size:1.8rem;font-weight:700;color:#856404;">${Math.round(passCount/(passCount+failCount+blockedCount||1)*100)}%</div>
+                <div style="font-size:0.8rem;color:#856404;">Succès</div>
+            </div>
+        </div>` : '';
+
+    const analysisHTML = opts.showAnalysis && analysis ? `
+        <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:16px;margin-bottom:24px;">
+            <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6c757d;margin-bottom:10px;">Analyse de la source</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+                <div><div style="font-size:0.75rem;color:#6c757d;">Feature</div><div style="font-weight:600;color:#3B6D11;">${esc(analysis.feature||'—')}</div></div>
+                <div><div style="font-size:0.75rem;color:#6c757d;">Complexité</div><div style="font-weight:600;">${esc(analysis.complexity||'—')}</div></div>
+                <div><div style="font-size:0.75rem;color:#6c757d;">Ambiguïtés</div><div style="font-weight:600;">${(analysis.ambiguities||[]).length} détectée(s)</div></div>
+            </div>
+        </div>` : '';
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(opts.project)} — Cahier de tests</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #212529; max-width: 860px; margin: 0 auto; padding: 32px 24px; background: #fff; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+<div style="border-bottom:3px solid #3B6D11;padding-bottom:20px;margin-bottom:28px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;">
+        <div>
+            <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#3B6D11;margin-bottom:6px;">✈ TestPilot</div>
+            <h1 style="font-size:1.6rem;font-weight:700;margin-bottom:4px;">${esc(opts.project)}</h1>
+            <div style="font-size:0.85rem;color:#6c757d;">${hasResults ? 'Rapport de campagne' : 'Cahier de tests'} — ${total} scénario${total>1?'s':''}</div>
+        </div>
+        <div style="text-align:right;font-size:0.8rem;color:#6c757d;">
+            ${opts.author ? `<div>${esc(opts.author)}</div>` : ''}
+            <div>${date}</div>
+        </div>
+    </div>
+</div>
+${metricsHTML}
+${analysisHTML}
+<div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6c757d;margin-bottom:14px;">
+    Scénarios (${total})
+</div>
+${scCards}
+<div style="margin-top:32px;padding-top:16px;border-top:1px solid #dee2e6;font-size:0.75rem;color:#adb5bd;text-align:center;">
+    Généré par TestPilot le ${date} ${opts.author ? '· ' + esc(opts.author) : ''}
+</div>
+</body>
+</html>`;
+}
+
+function getScenarios(opts) {
+    return opts.acceptedOnly ? scenarios.filter(s => s.accepted) : scenarios;
+}
+
+function generate() {
+    const opts = getOptions();
+    const toExport = getScenarios(opts);
+    if (toExport.length === 0) { alert('Aucun scénario à exporter avec les options sélectionnées.'); return; }
+
+    let content, filename, mime;
+
+    if (selectedFormat === 'html-full' || selectedFormat === 'html-scenarios') {
+        content  = buildHTMLReport(toExport, opts, selectedFormat === 'html-full');
+        filename = `testpilot-rapport-${new Date().toISOString().slice(0,10)}.html`;
+        mime     = 'text/html';
+    } else if (selectedFormat === 'json') {
+        content  = JSON.stringify(toExport.map(({ accepted, _id, ...r }) => r), null, 2);
+        filename = `testpilot-scenarios-${new Date().toISOString().slice(0,10)}.json`;
+        mime     = 'application/json';
+    } else if (selectedFormat === 'json-results') {
+        if (!session?.results) { alert('Aucune campagne exécutée.'); return; }
+        const data = { exportedAt: new Date().toISOString(), project: opts.project, author: opts.author,
+            summary: { total: scenarios.length, pass: session.results.filter(r=>r.status==='pass').length, fail: session.results.filter(r=>r.status==='fail').length, blocked: session.results.filter(r=>r.status==='blocked').length },
+            results: scenarios.map((sc,i) => ({ id: sc.id, title: sc.title, feature: sc.feature, status: session.results[i]?.status||'skipped', comment: session.results[i]?.comment||'', executedAt: session.results[i]?.ts ? new Date(session.results[i].ts).toISOString() : null }))
+        };
+        content  = JSON.stringify(data, null, 2);
+        filename = `testpilot-campagne-${new Date().toISOString().slice(0,10)}.json`;
+        mime     = 'application/json';
+    }
+
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function preview() {
+    const opts     = getOptions();
+    const toExport = getScenarios(opts);
+    if (toExport.length === 0) { alert('Aucun scénario à prévisualiser.'); return; }
+    if (selectedFormat !== 'html-full' && selectedFormat !== 'html-scenarios') { alert('L\'aperçu est disponible uniquement pour les exports HTML.'); return; }
+    const html = buildHTMLReport(toExport, opts, selectedFormat === 'html-full');
+    const panel = document.getElementById('previewPanel');
+    const frame = document.getElementById('previewFrame');
+    panel.classList.add('active');
+    frame.srcdoc = html;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+init();
+</script>
+</body>
+</html>
