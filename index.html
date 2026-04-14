@@ -160,6 +160,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);text-
 
 <nav class="nav">
   <a class="nav-brand" href="index.html">TestPilot</a>
+  <div id="projectSelectorContainer"></div>
   <div class="nav-links">
     <a class="nav-link active" href="index.html">Rédaction</a>
     <a class="nav-link" href="dashboard.html">Dashboard</a>
@@ -274,9 +275,10 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);text-
     <p>Colle une source ci-dessus et clique sur "Analyser et générer".</p>
   </div>
 
-  <footer>TestPilot v1.1 — Générateur de scénarios de tests IA</footer>
+  <footer>TestPilot v2.0 — Générateur de scénarios de tests IA</footer>
 </div>
 
+<script src="api-client.js"></script>
 <script>
 // ── Constants ─────────────────────────────────────────
 const SK = 'testpilot_scenarios';
@@ -285,7 +287,7 @@ const PK = 'testpilot_provider';
 const CK = 'testpilot_context';
 
 // ── State ─────────────────────────────────────────────
-const state = { scenarios: [], analysis: null };
+const state = { scenarios: [], analysis: null, projectId: null };
 
 // ── Providers ─────────────────────────────────────────
 const PROVIDERS = {
@@ -391,31 +393,46 @@ function toggleContext() {
   document.getElementById('ctxChevron').classList.toggle('open', ctxVisible);
 }
 
-function loadContext() {
+async function loadContext() {
+  if (!state.projectId) return;
   try {
-    const c = JSON.parse(localStorage.getItem(CK)) || {};
-    if (c.project)     document.getElementById('ctxProject').value     = c.project;
-    if (c.stack)       document.getElementById('ctxStack').value       = c.stack;
-    if (c.domain)      document.getElementById('ctxDomain').value      = c.domain;
-    if (c.adjacent)    document.getElementById('ctxAdjacent').value    = c.adjacent;
-    if (c.constraints) document.getElementById('ctxConstraints').value = c.constraints;
-    // Si un contexte existe, l'ouvrir automatiquement
-    if (c.project || c.stack || c.domain) { ctxVisible = true; toggleContext(); }
-  } catch {}
+    const project = await TestPilotAPI.Projects.get(state.projectId);
+    const context = await TestPilotAPI.Projects.getContext(state.projectId);
+    
+    document.getElementById('ctxProject').value = project.name || '';
+    document.getElementById('ctxStack').value = project.tech_stack || '';
+    document.getElementById('ctxDomain').value = project.business_domain || '';
+    document.getElementById('ctxAdjacent').value = context.adjacent_features || '';
+    document.getElementById('ctxConstraints').value = context.global_constraints || '';
+    
+    if (project.name || project.tech_stack || project.business_domain) {
+      if (!ctxVisible) toggleContext();
+    }
+  } catch (e) {
+    console.error('Erreur chargement contexte:', e);
+  }
 }
 
-function saveContext() {
-  localStorage.setItem(CK, JSON.stringify({
-    project:     document.getElementById('ctxProject').value,
-    stack:       document.getElementById('ctxStack').value,
-    domain:      document.getElementById('ctxDomain').value,
-    adjacent:    document.getElementById('ctxAdjacent').value,
-    constraints: document.getElementById('ctxConstraints').value,
-  }));
+async function saveContext() {
+  if (!state.projectId) return;
+  try {
+    await TestPilotAPI.Projects.updateContext(state.projectId, {
+      adjacent_features: document.getElementById('ctxAdjacent').value,
+      global_constraints: document.getElementById('ctxConstraints').value,
+    });
+  } catch (e) {
+    console.error('Erreur sauvegarde contexte:', e);
+  }
 }
 
 function getContext() {
-  try { return JSON.parse(localStorage.getItem(CK)) || {}; } catch { return {}; }
+  return {
+    project: document.getElementById('ctxProject').value,
+    stack: document.getElementById('ctxStack').value,
+    domain: document.getElementById('ctxDomain').value,
+    adjacent: document.getElementById('ctxAdjacent').value,
+    constraints: document.getElementById('ctxConstraints').value,
+  };
 }
 
 // ── Prompt ────────────────────────────────────────────
@@ -516,6 +533,8 @@ async function callLLM(prompt) {
 // ── Generate ──────────────────────────────────────────
 async function generate() {
   hideError();
+  if (!state.projectId) { showError('Veuillez sélectionner un projet.'); return; }
+  
   const text = document.getElementById('sourceInput').value.trim();
   if (!text) { showError('Veuillez entrer une description.'); return; }
 
@@ -527,11 +546,33 @@ async function generate() {
     const parsed = JSON.parse(match[0]);
     if (!Array.isArray(parsed.scenarios)) throw new Error('Format invalide — tableau de scénarios manquant.');
 
-    state.analysis  = { feature:parsed.feature, complexity:parsed.complexity, ambiguities:parsed.ambiguities||[], regressionRisks:parsed.regressionRisks||[] };
-    state.scenarios = parsed.scenarios.map((s,i) => ({ ...s, accepted:false, _id:Date.now()+i }));
+    state.analysis = { 
+      feature: parsed.feature, 
+      complexity: parsed.complexity, 
+      ambiguities: parsed.ambiguities || [], 
+      regressionRisks: parsed.regressionRisks || [] 
+    };
+    
+    // Préparer les scénarios pour l'API
+    const scenariosToSave = parsed.scenarios.map((s, i) => ({
+      ...s,
+      feature: parsed.feature,
+      accepted: false,
+      _id: Date.now() + i
+    }));
 
-    localStorage.setItem(SK, JSON.stringify(state.scenarios));
-    localStorage.setItem(AK, JSON.stringify(state.analysis));
+    // Sauvegarder via API
+    await TestPilotAPI.Analyses.save(state.projectId, {
+      feature_detected: state.analysis.feature,
+      complexity: state.analysis.complexity,
+      ambiguities: state.analysis.ambiguities,
+      regression_risks: state.analysis.regressionRisks
+    });
+
+    const savedScenarios = await TestPilotAPI.Scenarios.create(state.projectId, scenariosToSave);
+    
+    // Recharger depuis l'API pour avoir les vrais IDs
+    await loadScenarios();
 
     renderAnalysis(state.analysis);
     renderScenarios();
@@ -541,6 +582,44 @@ async function generate() {
     showError(e.message || 'Erreur lors de la génération.');
   } finally {
     setLoader(false);
+  }
+}
+
+// ── Load scenarios from API ───────────────────────────
+async function loadScenarios() {
+  if (!state.projectId) {
+    state.scenarios = [];
+    state.analysis = null;
+    return;
+  }
+  try {
+    const scenarios = await TestPilotAPI.Scenarios.list(state.projectId);
+    state.scenarios = scenarios.map(s => ({
+      _dbId: s.id,
+      id: s.scenario_id,
+      title: s.title,
+      type: s.scenario_type,
+      priority: s.priority,
+      given: s.given_text,
+      when: s.when_text,
+      then: s.then_text,
+      feature: s.feature_name,
+      accepted: !!s.accepted,
+      is_tnr: !!s.is_tnr,
+    }));
+    
+    const analysis = await TestPilotAPI.Analyses.get(state.projectId);
+    if (analysis) {
+      state.analysis = {
+        feature: analysis.feature_detected,
+        complexity: analysis.complexity,
+        ambiguities: analysis.ambiguities || [],
+        regressionRisks: analysis.regression_risks || []
+      };
+    }
+  } catch (e) {
+    console.error('Erreur chargement scénarios:', e);
+    state.scenarios = [];
   }
 }
 
@@ -601,7 +680,7 @@ function renderScenarios() {
     <div class="scenario-card ${sc.accepted?'accepted':''}" id="card-${i}">
       <div class="card-header">
         <div>
-          <div class="card-id">${esc(sc.id||('SC-'+String(i+1).padStart(3,'0')))}</div>
+          <div class="card-id">${esc(sc.id||('SC-'+String(i+1).padStart(3,'0')))} ${sc.is_tnr ? '<span class="badge-tnr">TNR</span>' : ''}</div>
           <div class="card-title">${esc(sc.title)}</div>
         </div>
         <div class="badges">
@@ -615,6 +694,9 @@ function renderScenarios() {
       <div class="card-actions">
         <button class="btn-sm ${sc.accepted?'btn-secondary':'btn-success'}" onclick="toggleAccept(${i})">
           ${sc.accepted?'✓ Accepté — Retirer':'Accepter'}
+        </button>
+        <button class="btn-sm btn-tnr ${sc.is_tnr?'active':''}" onclick="toggleTNR(${i})" title="Marquer comme Test de Non Régression">
+          ${sc.is_tnr?'✓ TNR':'TNR'}
         </button>
         <button class="btn-sm btn-secondary" onclick="toggleEdit(${i})">Modifier</button>
         <button class="btn-sm btn-danger" onclick="deleteSc(${i})">Supprimer</button>
@@ -645,49 +727,132 @@ function renderScenarios() {
 }
 
 // ── Actions ───────────────────────────────────────────
-function toggleAccept(i) { state.scenarios[i].accepted=!state.scenarios[i].accepted; localStorage.setItem(SK,JSON.stringify(state.scenarios)); renderScenarios(); }
-function deleteSc(i)     { state.scenarios.splice(i,1); localStorage.setItem(SK,JSON.stringify(state.scenarios)); renderScenarios(); }
-function toggleEdit(i)   { document.getElementById(`edit-${i}`).classList.toggle('active'); }
-
-function saveEdit(i) {
-  const title=document.getElementById(`ef-title-${i}`).value.trim();
-  const given=document.getElementById(`ef-given-${i}`).value.trim();
-  const when =document.getElementById(`ef-when-${i}`).value.trim();
-  const then_=document.getElementById(`ef-then-${i}`).value.trim();
-  const prio =document.getElementById(`ef-prio-${i}`).value;
-  if (!title||!given||!when||!then_) { showError('Tous les champs sont requis.'); return; }
-  state.scenarios[i]={...state.scenarios[i],title,given,when,then:then_,priority:prio};
-  localStorage.setItem(SK,JSON.stringify(state.scenarios));
-  renderScenarios();
+async function toggleAccept(i) {
+  const sc = state.scenarios[i];
+  if (!sc._dbId) return;
+  try {
+    await TestPilotAPI.Scenarios.toggleAccept(sc._dbId);
+    sc.accepted = !sc.accepted;
+    renderScenarios();
+  } catch (e) {
+    showError('Erreur: ' + e.message);
+  }
 }
 
-function acceptAll() { state.scenarios.forEach(s=>s.accepted=true); localStorage.setItem(SK,JSON.stringify(state.scenarios)); renderScenarios(); }
+async function toggleTNR(i) {
+  const sc = state.scenarios[i];
+  if (!sc._dbId) return;
+  try {
+    await TestPilotAPI.Scenarios.toggleTNR(sc._dbId);
+    sc.is_tnr = !sc.is_tnr;
+    renderScenarios();
+  } catch (e) {
+    showError('Erreur: ' + e.message);
+  }
+}
+
+async function deleteSc(i) {
+  const sc = state.scenarios[i];
+  if (!sc._dbId) return;
+  if (!confirm('Supprimer ce scénario ?')) return;
+  try {
+    await TestPilotAPI.Scenarios.delete(sc._dbId);
+    state.scenarios.splice(i, 1);
+    renderScenarios();
+  } catch (e) {
+    showError('Erreur: ' + e.message);
+  }
+}
+
+function toggleEdit(i) { document.getElementById(`edit-${i}`).classList.toggle('active'); }
+
+async function saveEdit(i) {
+  const sc = state.scenarios[i];
+  if (!sc._dbId) return;
+  
+  const title = document.getElementById(`ef-title-${i}`).value.trim();
+  const given = document.getElementById(`ef-given-${i}`).value.trim();
+  const when_ = document.getElementById(`ef-when-${i}`).value.trim();
+  const then_ = document.getElementById(`ef-then-${i}`).value.trim();
+  const prio  = document.getElementById(`ef-prio-${i}`).value;
+  
+  if (!title || !given || !when_ || !then_) { showError('Tous les champs sont requis.'); return; }
+  
+  try {
+    await TestPilotAPI.Scenarios.update(sc._dbId, {
+      title,
+      given_text: given,
+      when_text: when_,
+      then_text: then_,
+      priority: prio
+    });
+    
+    state.scenarios[i] = { ...sc, title, given, when: when_, then: then_, priority: prio };
+    renderScenarios();
+  } catch (e) {
+    showError('Erreur: ' + e.message);
+  }
+}
+
+async function acceptAll() {
+  if (!state.projectId) return;
+  try {
+    await TestPilotAPI.Scenarios.acceptAll(state.projectId);
+    state.scenarios.forEach(s => s.accepted = true);
+    renderScenarios();
+  } catch (e) {
+    showError('Erreur: ' + e.message);
+  }
+}
 
 function exportJSON() {
-  const out=state.scenarios.filter(s=>s.accepted).map(({accepted,_id,...r})=>r);
+  const out = state.scenarios.filter(s => s.accepted).map(({ accepted, _id, _dbId, ...r }) => r);
   if (!out.length) { showError('Aucun scénario accepté.'); return; }
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));
-  a.download=`testpilot-${new Date().toISOString().slice(0,10)}.json`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
+  a.download = `testpilot-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
-function clearAll() {
-  if (!confirm('Effacer tous les scénarios et l\'analyse ?')) return;
-  state.scenarios=[]; state.analysis=null;
-  localStorage.removeItem(SK); localStorage.removeItem(AK);
-  document.getElementById('analysisBlock').classList.remove('active');
-  renderScenarios(); hideError();
+async function clearAll() {
+  if (!state.projectId) return;
+  if (!confirm('Effacer tous les scénarios de ce projet ?')) return;
+  try {
+    await TestPilotAPI.Scenarios.deleteAll(state.projectId);
+    state.scenarios = [];
+    state.analysis = null;
+    document.getElementById('analysisBlock').classList.remove('active');
+    renderScenarios();
+    hideError();
+  } catch (e) {
+    showError('Erreur: ' + e.message);
+  }
+}
+
+// ── Project change handler ────────────────────────────
+async function onProjectChange(projectId) {
+  state.projectId = projectId;
+  await loadScenarios();
+  await loadContext();
+  if (state.analysis) {
+    renderAnalysis(state.analysis);
+  } else {
+    document.getElementById('analysisBlock').classList.remove('active');
+  }
+  renderScenarios();
 }
 
 // ── Init ──────────────────────────────────────────────
 loadProviderSettings();
 renderProviderFields();
-loadContext();
-try { state.scenarios=JSON.parse(localStorage.getItem(SK))||[]; } catch { state.scenarios=[]; }
-try { state.analysis =JSON.parse(localStorage.getItem(AK))||null; } catch { state.analysis=null; }
-if (state.analysis) renderAnalysis(state.analysis);
-renderScenarios();
+
+// Initialize project selector
+TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
+  state.projectId = TestPilotAPI.getCurrentProjectId();
+  if (state.projectId) {
+    onProjectChange(state.projectId);
+  }
+});
 </script>
 </body>
 </html>

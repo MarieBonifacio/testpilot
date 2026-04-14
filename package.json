@@ -1,0 +1,26 @@
+{
+  "name": "testpilot",
+  "version": "2.0.0",
+  "description": "Générateur de scénarios de tests assisté par IA — avec persistance multi-projets et bibliothèque TNR.",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "node proxy.js",
+    "init-db": "node init_db.js",
+    "dev": "node init_db.js && node proxy.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MarieBonifacio/testpilot.git"
+  },
+  "keywords": ["testing", "qa", "test-automation", "ai", "gherkin"],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/MarieBonifacio/testpilot/issues"
+  },
+  "homepage": "https://github.com/MarieBonifacio/testpilot#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "sqlite3": "^6.0.1"
+  }
+}

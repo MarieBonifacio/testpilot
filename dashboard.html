@@ -34,7 +34,7 @@
         .container { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
 
         /* Metric cards */
-        .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 28px; }
+        .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 28px; }
         .metric { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
         .metric-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
         .metric-value { font-size: 2rem; font-weight: 700; line-height: 1; }
@@ -42,6 +42,7 @@
         .metric-value.amber { color: var(--warning); }
         .metric-value.red   { color: var(--danger); }
         .metric-value.gray  { color: var(--text-muted); }
+        .metric-value.purple { color: var(--purple); }
         .metric-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; }
 
         /* Global progress */
@@ -99,6 +100,7 @@
         .sc-badge.high   { background: #f8d7da; color: #721c24; }
         .sc-badge.medium { background: #fff3cd; color: #856404; }
         .sc-badge.low    { background: #d4edda; color: #155724; }
+        .sc-badge.tnr    { background: var(--purple); color: white; }
         .chevron { font-size: 0.75rem; color: var(--text-muted); transition: transform .2s; margin-left: auto; flex-shrink: 0; }
         .chevron.open { transform: rotate(90deg); }
 
@@ -115,6 +117,9 @@
         /* Last updated */
         .last-updated { font-size: 0.75rem; color: var(--text-muted); }
 
+        @media (max-width: 900px) {
+            .metrics { grid-template-columns: repeat(3, 1fr); }
+        }
         @media (max-width: 700px) {
             .metrics { grid-template-columns: repeat(2, 1fr); }
             .feature-bar-wrap { width: 80px; }
@@ -126,10 +131,12 @@
 
 <nav class="nav">
     <a class="nav-brand" href="index.html">TestPilot</a>
+    <div id="projectSelectorContainer"></div>
     <div class="nav-links">
         <a class="nav-link" href="index.html">Rédaction</a>
         <a class="nav-link active" href="dashboard.html">Dashboard</a>
         <a class="nav-link" href="campagne.html">Campagne</a>
+        <a class="nav-link" href="export.html">Export</a>
     </div>
 </nav>
 
@@ -139,20 +146,40 @@
             <h2 style="font-size:1.3rem;font-weight:700;">Couverture de tests</h2>
             <div class="last-updated" id="lastUpdated"></div>
         </div>
-        <button class="refresh-btn" onclick="init()">↻ Actualiser</button>
+        <button class="refresh-btn" onclick="loadData()">↻ Actualiser</button>
     </div>
 
     <div id="appContent"></div>
 </div>
 
+<script src="api-client.js"></script>
 <script>
-const STORAGE_KEY  = 'testpilot_scenarios';
-const ANALYSIS_KEY = 'testpilot_analysis';
+let state = { projectId: null, scenarios: [] };
 
 function esc(t) { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
 
-function loadData() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
+async function loadData() {
+    if (!state.projectId) {
+        document.getElementById('appContent').innerHTML = renderNoProject();
+        return;
+    }
+    
+    try {
+        const scenarios = await TestPilotAPI.Scenarios.list(state.projectId);
+        state.scenarios = scenarios.map(s => ({
+            id: s.scenario_id,
+            title: s.title,
+            type: s.scenario_type,
+            priority: s.priority,
+            feature: s.feature_name,
+            accepted: !!s.accepted,
+            is_tnr: !!s.is_tnr
+        }));
+        render();
+    } catch (e) {
+        console.error('Erreur chargement:', e);
+        document.getElementById('appContent').innerHTML = `<div class="empty"><p>Erreur: ${e.message}</p></div>`;
+    }
 }
 
 function groupByFeature(scenarios) {
@@ -177,6 +204,14 @@ function coverageLabel(cls) {
     return { covered: 'Couvert', partial: 'Partiel', none: 'Aucun test' }[cls];
 }
 
+function renderNoProject() {
+    return `<div class="empty">
+        <div class="empty-icon">📁</div>
+        <p style="font-weight:600;">Aucun projet sélectionné</p>
+        <p>Sélectionnez un projet dans le menu ci-dessus pour voir sa couverture de tests.</p>
+    </div>`;
+}
+
 function renderEmpty() {
     return `<div class="empty">
         <div class="empty-icon">◎</div>
@@ -191,6 +226,7 @@ function renderMetrics(scenarios) {
     const pct      = total > 0 ? Math.round(accepted / total * 100) : 0;
     const critiques = scenarios.filter(s => s.priority === 'high').length;
     const nonCouverts = scenarios.filter(s => !s.accepted).length;
+    const tnrCount = scenarios.filter(s => s.is_tnr).length;
 
     const fillClass = pct >= 70 ? '' : pct >= 40 ? 'warn' : 'danger';
     const pctColor  = pct >= 70 ? 'green' : pct >= 40 ? 'amber' : 'red';
@@ -206,6 +242,11 @@ function renderMetrics(scenarios) {
             <div class="metric-label">Acceptés</div>
             <div class="metric-value green">${accepted}</div>
             <div class="metric-sub">validés pour campagne</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">TNR</div>
+            <div class="metric-value purple">${tnrCount}</div>
+            <div class="metric-sub">tests de non régression</div>
         </div>
         <div class="metric">
             <div class="metric-label">Priorité critique</div>
@@ -248,6 +289,7 @@ function renderFeatures(grouped) {
                     <div class="sc-badges">
                         <span class="sc-badge ${esc(sc.type)}">${esc(sc.type)}</span>
                         <span class="sc-badge ${esc(sc.priority)}">${esc(sc.priority)}</span>
+                        ${sc.is_tnr ? '<span class="sc-badge tnr">TNR</span>' : ''}
                     </div>
                 </div>
             </div>`).join('');
@@ -281,9 +323,9 @@ function toggleFeature(i) {
     chev.classList.toggle('open', open);
 }
 
-function init() {
-    const scenarios = loadData();
+function render() {
     const app = document.getElementById('appContent');
+    const scenarios = state.scenarios;
 
     document.getElementById('lastUpdated').textContent =
         scenarios.length > 0
@@ -299,10 +341,25 @@ function init() {
     app.innerHTML = renderMetrics(scenarios) + renderFeatures(grouped);
 }
 
-init();
+async function onProjectChange(projectId) {
+    state.projectId = projectId;
+    await loadData();
+}
 
-// Auto-refresh si l'onglet reprend le focus (l'utilisateur vient de générer dans index.html)
-window.addEventListener('focus', init);
+// Init
+TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
+    state.projectId = TestPilotAPI.getCurrentProjectId();
+    if (state.projectId) {
+        loadData();
+    } else {
+        document.getElementById('appContent').innerHTML = renderNoProject();
+    }
+});
+
+// Auto-refresh si l'onglet reprend le focus
+window.addEventListener('focus', () => {
+    if (state.projectId) loadData();
+});
 </script>
 </body>
 </html>

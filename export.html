@@ -71,6 +71,7 @@
 <body>
 <nav class="nav">
     <a class="nav-brand" href="index.html">TestPilot</a>
+    <div id="projectSelectorContainer"></div>
     <div class="nav-links">
         <a class="nav-link" href="index.html">Rédaction</a>
         <a class="nav-link" href="dashboard.html">Dashboard</a>
@@ -86,25 +87,74 @@
     <div id="appContent"></div>
 </div>
 
+<script src="api-client.js"></script>
 <script>
-const STORAGE_KEY  = 'testpilot_scenarios';
-const ANALYSIS_KEY = 'testpilot_analysis';
-const SESSION_KEY  = 'testpilot_session';
-
 function esc(t) { const d = document.createElement('div'); d.textContent = String(t||''); return d.innerHTML; }
 
-let scenarios = [], analysis = null, session = null;
+let state = {
+    projectId: null,
+    projectName: '',
+    scenarios: [],
+    analysis: null,
+    session: null
+};
 let selectedFormat = 'html-full';
 
-function load() {
-    try { scenarios = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { scenarios = []; }
-    try { analysis  = JSON.parse(localStorage.getItem(ANALYSIS_KEY)); } catch {}
-    try { session   = JSON.parse(localStorage.getItem(SESSION_KEY)); } catch {}
+function getSessionKey() {
+    return `testpilot_session_${state.projectId}`;
 }
 
-function init() {
-    load();
+async function loadData() {
+    if (!state.projectId) {
+        renderNoProject();
+        return;
+    }
+    
+    try {
+        const project = await TestPilotAPI.Projects.get(state.projectId);
+        state.projectName = project.name;
+        
+        const allScenarios = await TestPilotAPI.Scenarios.list(state.projectId);
+        state.scenarios = allScenarios.map(s => ({
+            _dbId: s.id,
+            id: s.scenario_id,
+            title: s.title,
+            type: s.scenario_type,
+            priority: s.priority,
+            given: s.given_text,
+            when: s.when_text,
+            then: s.then_text,
+            feature: s.feature_name,
+            accepted: !!s.accepted,
+            is_tnr: !!s.is_tnr
+        }));
+        
+        state.analysis = await TestPilotAPI.Analyses.get(state.projectId);
+        
+        try {
+            state.session = JSON.parse(localStorage.getItem(getSessionKey()));
+        } catch {
+            state.session = null;
+        }
+        
+        render();
+    } catch (e) {
+        console.error('Erreur chargement:', e);
+        document.getElementById('appContent').innerHTML = `<div class="empty"><p>Erreur: ${e.message}</p></div>`;
+    }
+}
+
+function renderNoProject() {
+    document.getElementById('appContent').innerHTML = `<div class="empty">
+        <div style="font-size:2rem;margin-bottom:12px;">📁</div>
+        <p style="font-weight:600;margin-bottom:6px;">Aucun projet sélectionné</p>
+        <p>Sélectionnez un projet dans le menu ci-dessus pour exporter ses scénarios.</p>
+    </div>`;
+}
+
+function render() {
     const app = document.getElementById('appContent');
+    const scenarios = state.scenarios;
 
     if (scenarios.length === 0) {
         app.innerHTML = `<div class="empty">
@@ -116,7 +166,8 @@ function init() {
     }
 
     const accepted = scenarios.filter(s => s.accepted).length;
-    const hasSession = session && session.results && session.results.length > 0;
+    const tnrCount = scenarios.filter(s => s.is_tnr).length;
+    const hasSession = state.session && state.session.results && state.session.results.length > 0;
 
     app.innerHTML = `
         <div class="formats">
@@ -148,7 +199,7 @@ function init() {
             <div class="opt-title">Options du rapport</div>
             <div class="opt-field">
                 <label>Nom du projet / mission</label>
-                <input type="text" id="optProject" placeholder="Ex : Carter-Cash — Recette ATHENA Q2 2026">
+                <input type="text" id="optProject" value="${esc(state.projectName)}" placeholder="Ex : Carter-Cash — Recette ATHENA Q2 2026">
             </div>
             <div class="opt-field">
                 <label>Auteur</label>
@@ -157,6 +208,10 @@ function init() {
             <label class="opt-row">
                 <input type="checkbox" id="optAcceptedOnly" checked>
                 <span>Inclure uniquement les scénarios acceptés (${accepted} / ${scenarios.length})</span>
+            </label>
+            <label class="opt-row">
+                <input type="checkbox" id="optTNROnly">
+                <span>Inclure uniquement les TNR (${tnrCount} scénarios)</span>
             </label>
             <label class="opt-row">
                 <input type="checkbox" id="optShowAnalysis" checked>
@@ -186,9 +241,10 @@ function selectFormat(fmt, el) {
 
 function getOptions() {
     return {
-        project:      document.getElementById('optProject')?.value.trim() || 'TestPilot',
+        project:      document.getElementById('optProject')?.value.trim() || state.projectName || 'TestPilot',
         author:       document.getElementById('optAuthor')?.value.trim() || '',
         acceptedOnly: document.getElementById('optAcceptedOnly')?.checked ?? true,
+        tnrOnly:      document.getElementById('optTNROnly')?.checked ?? false,
         showAnalysis: document.getElementById('optShowAnalysis')?.checked ?? true,
     };
 }
@@ -197,11 +253,12 @@ function buildHTMLReport(scenariosToExport, opts, includeResults) {
     const date = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
     const accepted = scenariosToExport.filter(s => s.accepted).length;
     const total    = scenariosToExport.length;
+    const tnrCount = scenariosToExport.filter(s => s.is_tnr).length;
 
     // Résultats de campagne
     let resultsMap = {};
-    if (includeResults && session?.results) {
-        scenarios.forEach((sc, i) => { if (session.results[i]) resultsMap[sc.id || i] = session.results[i]; });
+    if (includeResults && state.session?.results) {
+        state.scenarios.forEach((sc, i) => { if (state.session.results[i]) resultsMap[sc.id || i] = state.session.results[i]; });
     }
 
     const passCount    = Object.values(resultsMap).filter(r => r.status === 'pass').length;
@@ -227,7 +284,10 @@ function buildHTMLReport(scenariosToExport, opts, includeResults) {
         <div style="border:1px solid #dee2e6;border-radius:10px;padding:20px;margin-bottom:16px;page-break-inside:avoid;${r && r.status === 'fail' ? 'border-left:4px solid #dc3545;' : r && r.status === 'pass' ? 'border-left:4px solid #28a745;' : ''}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:10px;flex-wrap:wrap;">
                 <div>
-                    <div style="font-family:monospace;font-size:0.72rem;color:#6c757d;margin-bottom:3px;">${esc(sc.id || ('SC-'+String(i+1).padStart(3,'0')))}</div>
+                    <div style="font-family:monospace;font-size:0.72rem;color:#6c757d;margin-bottom:3px;">
+                        ${esc(sc.id || ('SC-'+String(i+1).padStart(3,'0')))}
+                        ${sc.is_tnr ? '<span style="background:#534AB7;color:white;padding:1px 6px;border-radius:20px;font-size:0.65rem;font-weight:700;margin-left:6px;">TNR</span>' : ''}
+                    </div>
                     <div style="font-weight:700;font-size:1rem;">${esc(sc.title)}</div>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
@@ -274,15 +334,18 @@ function buildHTMLReport(scenariosToExport, opts, includeResults) {
             </div>
         </div>` : '';
 
+    const analysis = state.analysis;
     const analysisHTML = opts.showAnalysis && analysis ? `
         <div style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:16px;margin-bottom:24px;">
             <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6c757d;margin-bottom:10px;">Analyse de la source</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
-                <div><div style="font-size:0.75rem;color:#6c757d;">Feature</div><div style="font-weight:600;color:#3B6D11;">${esc(analysis.feature||'—')}</div></div>
+                <div><div style="font-size:0.75rem;color:#6c757d;">Feature</div><div style="font-weight:600;color:#3B6D11;">${esc(analysis.feature_detected||'—')}</div></div>
                 <div><div style="font-size:0.75rem;color:#6c757d;">Complexité</div><div style="font-weight:600;">${esc(analysis.complexity||'—')}</div></div>
                 <div><div style="font-size:0.75rem;color:#6c757d;">Ambiguïtés</div><div style="font-weight:600;">${(analysis.ambiguities||[]).length} détectée(s)</div></div>
             </div>
         </div>` : '';
+
+    const tnrBadge = opts.tnrOnly ? '<span style="background:#534AB7;color:white;padding:2px 8px;border-radius:20px;font-size:0.7rem;font-weight:700;margin-left:8px;">TNR</span>' : '';
 
     return `<!DOCTYPE html>
 <html lang="fr">
@@ -300,8 +363,8 @@ function buildHTMLReport(scenariosToExport, opts, includeResults) {
     <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;">
         <div>
             <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#3B6D11;margin-bottom:6px;">✈ TestPilot</div>
-            <h1 style="font-size:1.6rem;font-weight:700;margin-bottom:4px;">${esc(opts.project)}</h1>
-            <div style="font-size:0.85rem;color:#6c757d;">${hasResults ? 'Rapport de campagne' : 'Cahier de tests'} — ${total} scénario${total>1?'s':''}</div>
+            <h1 style="font-size:1.6rem;font-weight:700;margin-bottom:4px;">${esc(opts.project)}${tnrBadge}</h1>
+            <div style="font-size:0.85rem;color:#6c757d;">${hasResults ? 'Rapport de campagne' : 'Cahier de tests'} — ${total} scénario${total>1?'s':''}${tnrCount > 0 ? ` (dont ${tnrCount} TNR)` : ''}</div>
         </div>
         <div style="text-align:right;font-size:0.8rem;color:#6c757d;">
             ${opts.author ? `<div>${esc(opts.author)}</div>` : ''}
@@ -323,7 +386,10 @@ ${scCards}
 }
 
 function getScenarios(opts) {
-    return opts.acceptedOnly ? scenarios.filter(s => s.accepted) : scenarios;
+    let filtered = state.scenarios;
+    if (opts.acceptedOnly) filtered = filtered.filter(s => s.accepted);
+    if (opts.tnrOnly) filtered = filtered.filter(s => s.is_tnr);
+    return filtered;
 }
 
 function generate() {
@@ -335,17 +401,34 @@ function generate() {
 
     if (selectedFormat === 'html-full' || selectedFormat === 'html-scenarios') {
         content  = buildHTMLReport(toExport, opts, selectedFormat === 'html-full');
-        filename = `testpilot-rapport-${new Date().toISOString().slice(0,10)}.html`;
+        filename = `testpilot-rapport${opts.tnrOnly ? '-tnr' : ''}-${new Date().toISOString().slice(0,10)}.html`;
         mime     = 'text/html';
     } else if (selectedFormat === 'json') {
-        content  = JSON.stringify(toExport.map(({ accepted, _id, ...r }) => r), null, 2);
-        filename = `testpilot-scenarios-${new Date().toISOString().slice(0,10)}.json`;
+        content  = JSON.stringify(toExport.map(({ accepted, _dbId, ...r }) => r), null, 2);
+        filename = `testpilot-scenarios${opts.tnrOnly ? '-tnr' : ''}-${new Date().toISOString().slice(0,10)}.json`;
         mime     = 'application/json';
     } else if (selectedFormat === 'json-results') {
-        if (!session?.results) { alert('Aucune campagne exécutée.'); return; }
-        const data = { exportedAt: new Date().toISOString(), project: opts.project, author: opts.author,
-            summary: { total: scenarios.length, pass: session.results.filter(r=>r.status==='pass').length, fail: session.results.filter(r=>r.status==='fail').length, blocked: session.results.filter(r=>r.status==='blocked').length },
-            results: scenarios.map((sc,i) => ({ id: sc.id, title: sc.title, feature: sc.feature, status: session.results[i]?.status||'skipped', comment: session.results[i]?.comment||'', executedAt: session.results[i]?.ts ? new Date(session.results[i].ts).toISOString() : null }))
+        if (!state.session?.results) { alert('Aucune campagne exécutée.'); return; }
+        const data = { 
+            exportedAt: new Date().toISOString(), 
+            project: opts.project, 
+            projectId: state.projectId,
+            author: opts.author,
+            summary: { 
+                total: state.scenarios.length, 
+                pass: state.session.results.filter(r=>r.status==='pass').length, 
+                fail: state.session.results.filter(r=>r.status==='fail').length, 
+                blocked: state.session.results.filter(r=>r.status==='blocked').length 
+            },
+            results: state.scenarios.map((sc,i) => ({ 
+                id: sc.id, 
+                title: sc.title, 
+                feature: sc.feature, 
+                is_tnr: sc.is_tnr,
+                status: state.session.results[i]?.status||'skipped', 
+                comment: state.session.results[i]?.comment||'', 
+                executedAt: state.session.results[i]?.ts ? new Date(state.session.results[i].ts).toISOString() : null 
+            }))
         };
         content  = JSON.stringify(data, null, 2);
         filename = `testpilot-campagne-${new Date().toISOString().slice(0,10)}.json`;
@@ -373,7 +456,20 @@ function preview() {
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-init();
+async function onProjectChange(projectId) {
+    state.projectId = projectId;
+    await loadData();
+}
+
+// Init
+TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {
+    state.projectId = TestPilotAPI.getCurrentProjectId();
+    if (state.projectId) {
+        loadData();
+    } else {
+        renderNoProject();
+    }
+});
 </script>
 </body>
 </html>
