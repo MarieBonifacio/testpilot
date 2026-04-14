@@ -18,6 +18,7 @@ const https   = require("https");
 const path    = require("path");
 const fs      = require("fs");
 const XLSX    = require("xlsx");
+const crypto  = require("crypto");
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -164,18 +165,21 @@ app.put("/api/projects/:id/context", (req, res) => {
 // GET /api/projects/:id/scenarios - Liste les scénarios d'un projet
 app.get("/api/projects/:id/scenarios", (req, res) => {
   const { accepted, is_tnr } = req.query;
-  let sql = "SELECT * FROM scenarios WHERE project_id = ?";
+  let sql = `SELECT s.*, u.display_name AS assignee_name
+             FROM scenarios s
+             LEFT JOIN users u ON u.id = s.assigned_to
+             WHERE s.project_id = ?`;
   const params = [req.params.id];
   
   if (accepted !== undefined) {
-    sql += " AND accepted = ?";
+    sql += " AND s.accepted = ?";
     params.push(accepted === "true" ? 1 : 0);
   }
   if (is_tnr !== undefined) {
-    sql += " AND is_tnr = ?";
+    sql += " AND s.is_tnr = ?";
     params.push(is_tnr === "true" ? 1 : 0);
   }
-  sql += " ORDER BY created_at DESC";
+  sql += " ORDER BY s.created_at DESC";
   
   db.all(sql, params, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -1219,6 +1223,294 @@ app.get("/api/projects/:id/comep-report", (req, res) => {
       } : null
     });
   }).catch(err => res.status(500).json({ error: err.message }));
+});
+
+// ══════════════════════════════════════════════════════
+// ██  P3 — AUTH / USERS / WORKFLOW / NOTIFICATIONS
+// ══════════════════════════════════════════════════════
+
+// ── Helpers auth ─────────────────────────────────────
+function hashPassword(pw) {
+  return crypto.createHash("sha256").update(pw).digest("hex");
+}
+
+function generateToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+/** Middleware optionnel — attache req.currentUser si token valide */
+function authMiddleware(req, res, next) {
+  const header = req.headers["authorization"] || "";
+  const token  = header.replace(/^Bearer\s+/, "");
+  if (!token) return next(); // non-authentifié mais on continue (certains endpoints publics)
+  const now = new Date().toISOString();
+  db.get(
+    `SELECT u.* FROM users u
+     JOIN auth_sessions s ON s.user_id = u.id
+     WHERE s.token = ? AND s.expires_at > ?`,
+    [token, now],
+    (err, user) => {
+      if (!err && user) req.currentUser = user;
+      next();
+    }
+  );
+}
+
+/** Middleware qui exige auth */
+function requireAuth(req, res, next) {
+  if (!req.currentUser) return res.status(401).json({ error: "Non authentifié" });
+  next();
+}
+
+/** Middleware qui exige rôle cp ou admin */
+function requireCP(req, res, next) {
+  if (!req.currentUser) return res.status(401).json({ error: "Non authentifié" });
+  if (!["cp", "admin"].includes(req.currentUser.role))
+    return res.status(403).json({ error: "Rôle CP ou admin requis" });
+  next();
+}
+
+app.use(authMiddleware);
+
+// ── POST /api/auth/register ───────────────────────────
+app.post("/api/auth/register", (req, res) => {
+  const { username, password, display_name, role, email } = req.body;
+  if (!username || !password || !display_name) {
+    return res.status(400).json({ error: "username, password et display_name requis" });
+  }
+  const allowedRoles = ["automaticien", "cp", "key_user", "admin"];
+  const userRole = allowedRoles.includes(role) ? role : "automaticien";
+  const hash = hashPassword(password);
+  db.run(
+    "INSERT INTO users (username, password_hash, display_name, role, email) VALUES (?, ?, ?, ?, ?)",
+    [username, hash, display_name, userRole, email || null],
+    function(err) {
+      if (err) {
+        if (err.message.includes("UNIQUE")) return res.status(409).json({ error: "Nom d'utilisateur déjà pris" });
+        return res.status(500).json({ error: err.message });
+      }
+      res.status(201).json({ id: this.lastID, username, display_name, role: userRole, email: email || null });
+    }
+  );
+});
+
+// ── POST /api/auth/login ──────────────────────────────
+app.post("/api/auth/login", (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: "username et password requis" });
+  const hash = hashPassword(password);
+  db.get("SELECT * FROM users WHERE username = ? AND password_hash = ?", [username, hash], (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!user) return res.status(401).json({ error: "Identifiants incorrects" });
+    const token = generateToken();
+    const expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(); // 7 jours
+    db.run(
+      "INSERT INTO auth_sessions (user_id, token, expires_at) VALUES (?, ?, ?)",
+      [user.id, token, expires],
+      (err2) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        const { password_hash: _, ...safeUser } = user;
+        res.json({ token, user: safeUser });
+      }
+    );
+  });
+});
+
+// ── POST /api/auth/logout ─────────────────────────────
+app.post("/api/auth/logout", requireAuth, (req, res) => {
+  const header = req.headers["authorization"] || "";
+  const token  = header.replace(/^Bearer\s+/, "");
+  db.run("DELETE FROM auth_sessions WHERE token = ?", [token], () => res.json({ ok: true }));
+});
+
+// ── GET /api/auth/me ──────────────────────────────────
+app.get("/api/auth/me", requireAuth, (req, res) => {
+  const { password_hash: _, ...safeUser } = req.currentUser;
+  res.json(safeUser);
+});
+
+// ── GET /api/users ────────────────────────────────────
+app.get("/api/users", requireAuth, (req, res) => {
+  db.all("SELECT id, username, display_name, role, email, created_at FROM users ORDER BY display_name", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+// ── GET /api/users/:id ────────────────────────────────
+app.get("/api/users/:id", requireAuth, (req, res) => {
+  db.get("SELECT id, username, display_name, role, email, created_at FROM users WHERE id = ?", [req.params.id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: "Utilisateur non trouvé" });
+    res.json(row);
+  });
+});
+
+// ── PUT /api/users/:id ────────────────────────────────
+app.put("/api/users/:id", requireAuth, (req, res) => {
+  const { display_name, role, email, password } = req.body;
+  // Seul l'admin ou l'utilisateur lui-même peut modifier
+  const isSelf  = req.currentUser.id === parseInt(req.params.id);
+  const isAdmin = req.currentUser.role === "admin";
+  if (!isSelf && !isAdmin) return res.status(403).json({ error: "Accès refusé" });
+
+  let sql, params;
+  if (password) {
+    const hash = hashPassword(password);
+    sql = "UPDATE users SET display_name=?, role=?, email=?, password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=?";
+    params = [display_name, role, email || null, hash, req.params.id];
+  } else {
+    sql = "UPDATE users SET display_name=?, role=?, email=?, updated_at=CURRENT_TIMESTAMP WHERE id=?";
+    params = [display_name, role, email || null, req.params.id];
+  }
+  db.run(sql, params, function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: "Utilisateur non trouvé" });
+    res.json({ id: parseInt(req.params.id), display_name, role, email });
+  });
+});
+
+// ── DELETE /api/users/:id ─────────────────────────────
+app.delete("/api/users/:id", requireAuth, (req, res) => {
+  if (req.currentUser.role !== "admin") return res.status(403).json({ error: "Rôle admin requis" });
+  db.run("DELETE FROM users WHERE id = ?", [req.params.id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: "Utilisateur non trouvé" });
+    res.json({ deleted: true });
+  });
+});
+
+// ── P3.2 : Workflow validation scénarios ─────────────
+
+// PATCH /api/scenarios/:id/submit — soumettre pour validation
+app.patch("/api/scenarios/:id/submit", requireAuth, (req, res) => {
+  db.get("SELECT * FROM scenarios WHERE id = ?", [req.params.id], (err, sc) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!sc) return res.status(404).json({ error: "Scénario non trouvé" });
+    db.run(
+      "UPDATE scenarios SET validation_status='submitted', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      [req.params.id],
+      (err2) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        // Notifier les CPs et admins
+        db.all("SELECT id FROM users WHERE role IN ('cp','admin')", [], (err3, cps) => {
+          if (!err3 && cps.length > 0) {
+            const msg = `Scénario "${sc.title}" soumis pour validation par ${req.currentUser.display_name}`;
+            const stmt = db.prepare("INSERT INTO notifications (user_id, type, message, scenario_id) VALUES (?, 'submitted', ?, ?)");
+            cps.forEach(cp => stmt.run([cp.id, msg, sc.id]));
+            stmt.finalize();
+          }
+        });
+        res.json({ id: parseInt(req.params.id), validation_status: "submitted" });
+      }
+    );
+  });
+});
+
+// PATCH /api/scenarios/:id/validate — valider (CP/admin)
+app.patch("/api/scenarios/:id/validate", requireCP, (req, res) => {
+  db.get("SELECT * FROM scenarios WHERE id = ?", [req.params.id], (err, sc) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!sc) return res.status(404).json({ error: "Scénario non trouvé" });
+    db.run(
+      "UPDATE scenarios SET validation_status='validated', accepted=1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      [req.params.id],
+      (err2) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        // Notifier l'assigné ou le créateur (assigned_to)
+        if (sc.assigned_to) {
+          const msg = `Votre scénario "${sc.title}" a été validé par ${req.currentUser.display_name}`;
+          db.run("INSERT INTO notifications (user_id, type, message, scenario_id) VALUES (?, 'validated', ?, ?)",
+            [sc.assigned_to, msg, sc.id]);
+        }
+        res.json({ id: parseInt(req.params.id), validation_status: "validated" });
+      }
+    );
+  });
+});
+
+// PATCH /api/scenarios/:id/reject — rejeter (CP/admin)
+app.patch("/api/scenarios/:id/reject", requireCP, (req, res) => {
+  const { reason } = req.body || {};
+  db.get("SELECT * FROM scenarios WHERE id = ?", [req.params.id], (err, sc) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!sc) return res.status(404).json({ error: "Scénario non trouvé" });
+    db.run(
+      "UPDATE scenarios SET validation_status='rejected', rejection_reason=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      [reason || null, req.params.id],
+      (err2) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        if (sc.assigned_to) {
+          const msg = `Votre scénario "${sc.title}" a été rejeté${reason ? " : " + reason : ""}`;
+          db.run("INSERT INTO notifications (user_id, type, message, scenario_id) VALUES (?, 'rejected', ?, ?)",
+            [sc.assigned_to, msg, sc.id]);
+        }
+        res.json({ id: parseInt(req.params.id), validation_status: "rejected", rejection_reason: reason });
+      }
+    );
+  });
+});
+
+// ── P3.3 : Assignation scénarios ─────────────────────
+
+// PATCH /api/scenarios/:id/assign
+app.patch("/api/scenarios/:id/assign", requireCP, (req, res) => {
+  const { user_id } = req.body || {};
+  db.get("SELECT * FROM scenarios WHERE id = ?", [req.params.id], (err, sc) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!sc) return res.status(404).json({ error: "Scénario non trouvé" });
+    db.run(
+      "UPDATE scenarios SET assigned_to=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+      [user_id || null, req.params.id],
+      (err2) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        if (user_id) {
+          const msg = `Le scénario "${sc.title}" vous a été assigné par ${req.currentUser.display_name}`;
+          db.run("INSERT INTO notifications (user_id, type, message, scenario_id) VALUES (?, 'assigned', ?, ?)",
+            [user_id, msg, sc.id]);
+        }
+        res.json({ id: parseInt(req.params.id), assigned_to: user_id || null });
+      }
+    );
+  });
+});
+
+// ── P3.3 : Notifications ─────────────────────────────
+
+// GET /api/notifications
+app.get("/api/notifications", requireAuth, (req, res) => {
+  db.all(
+    "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50",
+    [req.currentUser.id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    }
+  );
+});
+
+// PATCH /api/notifications/:id/read
+app.patch("/api/notifications/:id/read", requireAuth, (req, res) => {
+  db.run(
+    "UPDATE notifications SET read=1 WHERE id=? AND user_id=?",
+    [req.params.id, req.currentUser.id],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ ok: true });
+    }
+  );
+});
+
+// POST /api/notifications/read-all
+app.post("/api/notifications/read-all", requireAuth, (req, res) => {
+  db.run(
+    "UPDATE notifications SET read=1 WHERE user_id=?",
+    [req.currentUser.id],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ ok: true });
+    }
+  );
 });
 
 // ══════════════════════════════════════════════════════

@@ -142,6 +142,45 @@ CREATE TABLE IF NOT EXISTS clickup_configs (
     UNIQUE(project_id)
 );
 
+-- ── P3.1 : Utilisateurs et rôles ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,            -- SHA-256 hex
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'automaticien', -- automaticien | cp | key_user | admin
+    email TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,             -- UUID v4 ou random hex
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- P3.2 : Colonnes workflow validation dans scenarios (migration idempotente)
+-- ALTER TABLE sera joué par init_db.js
+
+-- P3.3 : Notifications in-app ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL,                     -- assigned | validated | rejected | submitted
+    message TEXT NOT NULL,
+    scenario_id INTEGER,
+    read BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_token ON auth_sessions(token);
+
 -- Insert default Carter-Cash projects
 INSERT OR IGNORE INTO projects (name, tech_stack, business_domain, description) VALUES
     ('ATHENA', '.NET 4.8 (C#)', 'Vente en magasin et workflows', 'ERP historique majeur, intégrant des processus critiques liés à la vente en magasin et aux workflows. Décommissionnement prévu en 2027.'),

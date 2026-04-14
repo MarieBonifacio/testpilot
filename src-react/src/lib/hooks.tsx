@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import { projectsApi, projectStore } from './api';
-import type { Project, ProjectContext } from '../types';
+import { projectsApi, projectStore, authStore, authApi, notificationsApi } from './api';
+import type { Project, ProjectContext, User, AuthState, Notification } from '../types';
 
+// ══════════════════════════════════════════════════════
+// Project context
+// ══════════════════════════════════════════════════════
 interface ProjectContextType {
   projectId: number | null;
   project: Project | null;
@@ -20,18 +23,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   const setProjectId = useCallback((id: number | null) => {
-    if (id) {
-      projectStore.setCurrentProjectId(id);
-    }
+    if (id) projectStore.setCurrentProjectId(id);
     setProjectIdState(id);
   }, []);
 
   const refetch = useCallback(async () => {
-    if (!projectId) {
-      setProject(null);
-      setContext(null);
-      return;
-    }
+    if (!projectId) { setProject(null); setContext(null); return; }
     setLoading(true);
     try {
       const [p, ctx] = await Promise.all([
@@ -49,15 +46,11 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const id = projectStore.getCurrentProjectId();
-    if (id && id !== projectId) {
-      setProjectIdState(id);
-    }
+    if (id && id !== projectId) setProjectIdState(id);
   }, []);
 
   useEffect(() => {
-    if (projectId) {
-      refetch();
-    }
+    if (projectId) refetch();
   }, [projectId, refetch]);
 
   return (
@@ -71,4 +64,91 @@ export function useProject() {
   const ctx = useContext(ProjectCtx);
   if (!ctx) throw new Error('useProject must be used within ProjectProvider');
   return ctx;
+}
+
+// ══════════════════════════════════════════════════════
+// Auth context
+// ══════════════════════════════════════════════════════
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  loading: boolean;
+}
+
+const AuthCtx = createContext<AuthContextType | null>(null);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [authState, setAuthStateLocal] = useState<AuthState>(authStore.getAuthState);
+  const [loading, setLoading] = useState(false);
+
+  const login = useCallback(async (username: string, password: string) => {
+    setLoading(true);
+    try {
+      const res = await authApi.login(username, password);
+      const state: AuthState = { user: res.user, token: res.token };
+      authStore.setAuthState(state);
+      setAuthStateLocal(state);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try { await authApi.logout(); } catch { /* ignore */ }
+    authStore.clearAuthState();
+    setAuthStateLocal({ user: null, token: null });
+  }, []);
+
+  return (
+    <AuthCtx.Provider value={{ user: authState.user, token: authState.token, login, logout, loading }}>
+      {children}
+    </AuthCtx.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthCtx);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+}
+
+// ══════════════════════════════════════════════════════
+// Notifications hook
+// ══════════════════════════════════════════════════════
+export function useNotifications() {
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    try {
+      const data = await notificationsApi.list();
+      setNotifications(data);
+      setUnreadCount(data.filter(n => !n.read).length);
+    } catch { /* ignore */ }
+  }, [user]);
+
+  useEffect(() => {
+    load();
+    // Polling toutes les 30s
+    const interval = setInterval(load, 30_000);
+    return () => clearInterval(interval);
+  }, [load]);
+
+  const markRead = async (id: number) => {
+    await notificationsApi.markRead(id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const markAllRead = async () => {
+    await notificationsApi.markAllRead();
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setUnreadCount(0);
+  };
+
+  return { notifications, unreadCount, markRead, markAllRead, reload: load };
 }
