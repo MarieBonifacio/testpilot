@@ -440,8 +440,12 @@ app.put("/api/sessions/:id/finish", requireAuth, (req, res) => {
 // POST /api/sessions/:id/results - Enregistrer un résultat de test
 app.post("/api/sessions/:id/results", requireAuth, (req, res) => {
   const { scenario_id, status, comment } = req.body;
+  const VALID_STATUSES = ["PASS", "FAIL", "BLOQUE", "pass", "fail", "blocked", "skipped"];
   if (!scenario_id || !status) {
     return res.status(400).json({ error: "scenario_id et status sont requis" });
+  }
+  if (!VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `Statut invalide. Valeurs acceptées : ${VALID_STATUSES.join(", ")}` });
   }
   db.run(
     "INSERT INTO test_results (session_id, scenario_id, status, comment) VALUES (?, ?, ?, ?)",
@@ -810,6 +814,32 @@ app.get("/api/projects/:id/campaigns/kpis", requireAuth, (req, res) => {
 // ══════════════════════════════════════════════════════
 
 /**
+ * Valide que le host Ollama est une URL HTTP(S) acceptable.
+ * Rejette les schémas non-HTTP (file://, ftp://, etc.) et les IPs
+ * internes sensibles qui ne sont pas localhost.
+ * @param {string} host
+ * @returns {string} host nettoyé
+ * @throws {Error} si le host est invalide
+ */
+function validateOllamaHost(host) {
+  let parsed;
+  try {
+    parsed = new URL(host);
+  } catch {
+    throw new Error(`Hôte Ollama invalide : "${host}" n'est pas une URL valide`);
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error(`Protocole non autorisé : seuls http:// et https:// sont acceptés`);
+  }
+  // Bloquer les ressources cloud internes (AWS IMDSv1/v2, GCP, Azure)
+  const blockedHosts = ["169.254.169.254", "metadata.google.internal", "169.254.170.2"];
+  if (blockedHosts.includes(parsed.hostname)) {
+    throw new Error(`Hôte refusé pour des raisons de sécurité`);
+  }
+  return host.replace(/\/$/, "");
+}
+
+/**
  * Helper : effectue une requête HTTP (non HTTPS) vers un serveur Ollama local.
  * Ollama tourne en HTTP simple — on ne peut pas utiliser le module `https`.
  * @param {string} method    - GET | POST
@@ -866,7 +896,12 @@ function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
  * Vérifie qu'Ollama répond. Retourne { ok: true } ou { ok: false, error: "..." }
  */
 app.get("/api/ollama/health", async (req, res) => {
-  const host = req.query.host || "http://localhost:11434";
+  let host;
+  try {
+    host = validateOllamaHost(req.query.host || "http://localhost:11434");
+  } catch (err) {
+    return res.status(400).json({ ok: false, error: err.message });
+  }
   try {
     const { status } = await module.exports.ollamaRequest("GET", host, "/api/version", null, 5000);
     if (status === 200) {
@@ -885,7 +920,12 @@ app.get("/api/ollama/health", async (req, res) => {
  * Réponse : { models: ["llama3.2", "mistral:latest", ...] }
  */
 app.get("/api/ollama/models", async (req, res) => {
-  const host = req.query.host || "http://localhost:11434";
+  let host;
+  try {
+    host = validateOllamaHost(req.query.host || "http://localhost:11434");
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
   try {
     const { status, body } = await module.exports.ollamaRequest("GET", host, "/api/tags", null, 5000);
     if (status !== 200) {
@@ -906,7 +946,13 @@ app.get("/api/ollama/models", async (req, res) => {
  */
 app.post("/api/ollama/chat", async (req, res) => {
   const { host, model, messages, temperature } = req.body;
-  const ollamaHost = host || "http://localhost:11434";
+
+  let ollamaHost;
+  try {
+    ollamaHost = validateOllamaHost(host || "http://localhost:11434");
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 
   if (!model)    return res.status(400).json({ error: "Le champ 'model' est requis" });
   if (!messages) return res.status(400).json({ error: "Le champ 'messages' est requis" });
@@ -1508,6 +1554,16 @@ app.put("/api/users/:id", requireAuth, (req, res) => {
   const isAdmin = req.currentUser.role === "admin";
   if (!isSelf && !isAdmin) return res.status(403).json({ error: "Accès refusé" });
 
+  // Un non-admin ne peut pas s'auto-promouvoir (changer son propre rôle)
+  const ALLOWED_ROLES = ["automaticien", "cp", "key_user", "admin"];
+  const targetRole = role || req.currentUser.role;
+  if (!isAdmin && role && role !== req.currentUser.role) {
+    return res.status(403).json({ error: "Modification de rôle réservée aux administrateurs" });
+  }
+  if (role && !ALLOWED_ROLES.includes(role)) {
+    return res.status(400).json({ error: `Rôle invalide. Valeurs acceptées : ${ALLOWED_ROLES.join(", ")}` });
+  }
+
   let sql, params;
   if (password) {
     const hash = hashPassword(password);
@@ -1704,8 +1760,9 @@ app.use((req, res) => {
 // ══════════════════════════════════════════════════════
 
 // Export pour les tests (Supertest importe `app` sans démarrer le serveur)
+let server;
 if (require.main === module) {
-  app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     console.log("\x1b[32m");
     console.log("  ✈  TestPilot Server v2.0");
     console.log("  ─────────────────────────────────────────");
@@ -1732,11 +1789,15 @@ module.exports = { app, db, ollamaRequest };
 // ── Graceful shutdown ────────────────────────────────
 function shutdown(signal) {
   console.log(`\n[${signal}] Arrêt du serveur...`);
-  db.close((err) => {
-    if (err) console.error("Erreur fermeture DB:", err.message);
-    else console.log("Base de données fermée proprement.");
-    process.exit(0);
-  });
+  const done = () => {
+    db.close((err) => {
+      if (err) console.error("Erreur fermeture DB:", err.message);
+      else console.log("Base de données fermée proprement.");
+      process.exit(0);
+    });
+  };
+  if (server) server.close(done);
+  else done();
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT",  () => shutdown("SIGINT"));

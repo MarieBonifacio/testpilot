@@ -18,7 +18,6 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: src-react/package-lock.json
 
       - name: Install backend dependencies
         run: npm ci
