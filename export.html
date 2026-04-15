@@ -230,6 +230,10 @@ function render() {
                 <input type="checkbox" id="optShowAnalysis" checked>
                 <span>Inclure l'analyse de la source (feature, complexité, ambiguïtés)</span>
             </label>
+            <label class="opt-row" id="optExecSummaryRow">
+                <input type="checkbox" id="optExecSummary">
+                <span>Ajouter une synthèse exécutive générée par l'IA (Anthropic / Ollama requis)</span>
+            </label>
         </div>
 
         <div class="preview-panel" id="previewPanel">
@@ -241,7 +245,7 @@ function render() {
         </div>
 
         <div class="export-actions">
-            <button class="btn-primary" onclick="generate()">Générer et télécharger</button>
+            <button class="btn-primary" id="btnGenerate" onclick="generate()">Générer et télécharger</button>
             <button class="btn-secondary" onclick="preview()">Aperçu</button>
         </div>`;
 }
@@ -259,10 +263,40 @@ function getOptions() {
         acceptedOnly: document.getElementById('optAcceptedOnly')?.checked ?? true,
         tnrOnly:      document.getElementById('optTNROnly')?.checked ?? false,
         showAnalysis: document.getElementById('optShowAnalysis')?.checked ?? true,
+        execSummary:  document.getElementById('optExecSummary')?.checked ?? false,
     };
 }
 
-function buildHTMLReport(scenariosToExport, opts, includeResults) {
+/**
+ * Génère une synthèse exécutive via l'IA à partir des métriques du rapport.
+ * Retourne null si la case n'est pas cochée ou si l'IA échoue.
+ */
+async function buildExecSummary(scenariosToExport, opts, includeResults) {
+    if (!opts.execSummary) return null;
+    if (!TestPilotAPI?.LLM?.call) return null;
+    const total    = scenariosToExport.length;
+    const accepted = scenariosToExport.filter(s => s.accepted).length;
+    const tnrCount = scenariosToExport.filter(s => s.is_tnr).length;
+    let passCount = 0, failCount = 0, blockedCount = 0;
+    if (includeResults && state.session?.results) {
+        passCount    = state.session.results.filter(r => r?.status === 'pass').length;
+        failCount    = state.session.results.filter(r => r?.status === 'fail').length;
+        blockedCount = state.session.results.filter(r => r?.status === 'blocked').length;
+    }
+    const pct = (passCount + failCount + blockedCount) > 0
+        ? Math.round(passCount / (passCount + failCount + blockedCount) * 100)
+        : null;
+    const analysis = state.analysis;
+    const prompt = `Tu es un expert QA. Génère une synthèse exécutive en français (3 à 5 phrases, ton professionnel et direct, sans titre) pour ce livrable de tests :\nProjet : ${opts.project}${opts.author ? ' | Auteur : ' + opts.author : ''}\nScénarios : ${total} (${accepted} acceptés${tnrCount > 0 ? ', ' + tnrCount + ' TNR' : ''})${pct !== null ? '\nRésultats : ' + passCount + ' PASS, ' + failCount + ' FAIL, ' + blockedCount + ' BLOQUÉ — Taux de succès : ' + pct + '%' : ''}${analysis?.feature_detected ? '\nFeature : ' + analysis.feature_detected : ''}${analysis?.complexity ? ' — Complexité : ' + analysis.complexity : ''}\nAdapte le texte à un manager non-technique. Conclus par une courte évaluation de la qualité livrée.`;
+    try {
+        return await TestPilotAPI.LLM.call(prompt, { maxTokens: 400 });
+    } catch(e) {
+        console.warn('Synthèse IA non disponible :', e.message);
+        return null;
+    }
+}
+
+function buildHTMLReport(scenariosToExport, opts, includeResults, execSummary) {
     const date = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
     const accepted = scenariosToExport.filter(s => s.accepted).length;
     const total    = scenariosToExport.length;
@@ -385,6 +419,7 @@ function buildHTMLReport(scenariosToExport, opts, includeResults) {
         </div>
     </div>
 </div>
+${execSummary ? `<div style="background:#eaf4e8;border-left:4px solid #3B6D11;border-radius:8px;padding:16px 20px;margin-bottom:24px;font-size:0.92rem;line-height:1.6;color:#212529;"><div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#3B6D11;margin-bottom:8px;">Synthèse exécutive</div>${esc(execSummary)}</div>` : ''}
 ${metricsHTML}
 ${analysisHTML}
 <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6c757d;margin-bottom:14px;">
@@ -405,63 +440,74 @@ function getScenarios(opts) {
     return filtered;
 }
 
-function generate() {
+async function generate() {
     const opts = getOptions();
     const toExport = getScenarios(opts);
     if (toExport.length === 0) { alert('Aucun scénario à exporter avec les options sélectionnées.'); return; }
 
+    const btn = document.getElementById('btnGenerate');
+    if (btn) { btn.disabled = true; btn.textContent = opts.execSummary ? 'Génération IA en cours…' : 'Génération…'; }
+
     let content, filename, mime;
 
-    if (selectedFormat === 'html-full' || selectedFormat === 'html-scenarios') {
-        content  = buildHTMLReport(toExport, opts, selectedFormat === 'html-full');
-        filename = `testpilot-rapport${opts.tnrOnly ? '-tnr' : ''}-${new Date().toISOString().slice(0,10)}.html`;
-        mime     = 'text/html';
-    } else if (selectedFormat === 'json') {
-        content  = JSON.stringify(toExport.map(({ accepted, _dbId, ...r }) => r), null, 2);
-        filename = `testpilot-scenarios${opts.tnrOnly ? '-tnr' : ''}-${new Date().toISOString().slice(0,10)}.json`;
-        mime     = 'application/json';
-    } else if (selectedFormat === 'json-results') {
-        if (!state.session?.results) { alert('Aucune campagne exécutée.'); return; }
-        const data = { 
-            exportedAt: new Date().toISOString(), 
-            project: opts.project, 
-            projectId: state.projectId,
-            author: opts.author,
-            summary: { 
-                total: state.scenarios.length, 
-                pass: state.session.results.filter(r=>r.status==='pass').length, 
-                fail: state.session.results.filter(r=>r.status==='fail').length, 
-                blocked: state.session.results.filter(r=>r.status==='blocked').length 
-            },
-            results: state.scenarios.map((sc,i) => ({ 
-                id: sc.id, 
-                title: sc.title, 
-                feature: sc.feature, 
-                is_tnr: sc.is_tnr,
-                status: state.session.results[i]?.status||'skipped', 
-                comment: state.session.results[i]?.comment||'', 
-                executedAt: state.session.results[i]?.ts ? new Date(state.session.results[i].ts).toISOString() : null 
-            }))
-        };
-        content  = JSON.stringify(data, null, 2);
-        filename = `testpilot-campagne-${new Date().toISOString().slice(0,10)}.json`;
-        mime     = 'application/json';
-    }
+    try {
+        if (selectedFormat === 'html-full' || selectedFormat === 'html-scenarios') {
+            const includeResults = selectedFormat === 'html-full';
+            const execSummary = await buildExecSummary(toExport, opts, includeResults);
+            content  = buildHTMLReport(toExport, opts, includeResults, execSummary);
+            filename = `testpilot-rapport${opts.tnrOnly ? '-tnr' : ''}-${new Date().toISOString().slice(0,10)}.html`;
+            mime     = 'text/html';
+        } else if (selectedFormat === 'json') {
+            content  = JSON.stringify(toExport.map(({ accepted, _dbId, ...r }) => r), null, 2);
+            filename = `testpilot-scenarios${opts.tnrOnly ? '-tnr' : ''}-${new Date().toISOString().slice(0,10)}.json`;
+            mime     = 'application/json';
+        } else if (selectedFormat === 'json-results') {
+            if (!state.session?.results) { alert('Aucune campagne exécutée.'); return; }
+            const data = { 
+                exportedAt: new Date().toISOString(), 
+                project: opts.project, 
+                projectId: state.projectId,
+                author: opts.author,
+                summary: { 
+                    total: state.scenarios.length, 
+                    pass: state.session.results.filter(r=>r.status==='pass').length, 
+                    fail: state.session.results.filter(r=>r.status==='fail').length, 
+                    blocked: state.session.results.filter(r=>r.status==='blocked').length 
+                },
+                results: state.scenarios.map((sc,i) => ({ 
+                    id: sc.id, 
+                    title: sc.title, 
+                    feature: sc.feature, 
+                    is_tnr: sc.is_tnr,
+                    status: state.session.results[i]?.status||'skipped', 
+                    comment: state.session.results[i]?.comment||'', 
+                    executedAt: state.session.results[i]?.ts ? new Date(state.session.results[i].ts).toISOString() : null 
+                }))
+            };
+            content  = JSON.stringify(data, null, 2);
+            filename = `testpilot-campagne-${new Date().toISOString().slice(0,10)}.json`;
+            mime     = 'application/json';
+        }
 
-    const blob = new Blob([content], { type: mime });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
+        const blob = new Blob([content], { type: mime });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Générer et télécharger'; }
+    }
 }
 
-function preview() {
+async function preview() {
     const opts     = getOptions();
     const toExport = getScenarios(opts);
     if (toExport.length === 0) { alert('Aucun scénario à prévisualiser.'); return; }
     if (selectedFormat !== 'html-full' && selectedFormat !== 'html-scenarios') { alert('L\'aperçu est disponible uniquement pour les exports HTML.'); return; }
-    const html = buildHTMLReport(toExport, opts, selectedFormat === 'html-full');
+    const includeResults = selectedFormat === 'html-full';
+    const execSummary = await buildExecSummary(toExport, opts, includeResults);
+    const html = buildHTMLReport(toExport, opts, includeResults, execSummary);
     const panel = document.getElementById('previewPanel');
     const frame = document.getElementById('previewFrame');
     panel.classList.add('active');

@@ -475,10 +475,12 @@ function renderResults() {
             <div style="text-align:left;margin-bottom:24px;">${rows}</div>
             <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
                 <button class="btn-primary" onclick="exportResults()">Exporter les résultats JSON</button>
+                ${(fail + blk) > 0 ? `<button class="btn-secondary" id="btnAnalyzeAI" onclick="analyzeFailures()">Analyser les échecs avec l\'IA</button>` : ''}
                 <button class="btn-secondary" onclick="resetSession()">Nouvelle campagne</button>
                 <a href="historique.html" style="text-decoration:none;"><button class="btn-secondary">Voir l'historique</button></a>
                 <a href="dashboard.html" style="text-decoration:none;"><button class="btn-secondary">Voir le dashboard</button></a>
             </div>
+            <div id="aiAnalysisBlock" style="display:none;margin-top:24px;text-align:left;background:var(--bg-alt,#f8f9fa);border:1px solid #dee2e6;border-radius:10px;padding:20px;"></div>
         </div>`;
 }
 
@@ -595,6 +597,66 @@ async function archiveCampaign() {
         setTimeout(() => badge.remove(), 3500);
     } catch (e) {
         console.warn('Archivage campagne échoué:', e.message);
+    }
+}
+
+// ── Analyse IA des échecs ─────────────────────────────
+async function analyzeFailures() {
+    if (!TestPilotAPI?.LLM?.call) {
+        alert('Module LLM non disponible. Configurez un provider IA dans les paramètres.');
+        return;
+    }
+    const btn = document.getElementById('btnAnalyzeAI');
+    const block = document.getElementById('aiAnalysisBlock');
+    if (!block) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Analyse en cours…';
+    block.style.display = 'block';
+    block.innerHTML = '<div style="color:#6c757d;font-size:0.9rem;">Interrogation du modèle IA…</div>';
+
+    const scenarios = getFilteredScenarios();
+    const failed = scenarios
+        .map((sc, i) => ({ sc, r: state.session.results[i] }))
+        .filter(({ r }) => r && (r.status === 'fail' || r.status === 'blocked'));
+
+    const lines = failed.map(({ sc, r }) =>
+        `- [${r.status.toUpperCase()}] ${sc.id || ('SC-' + String(scenarios.indexOf(sc)+1).padStart(3,'0'))} — ${sc.title}` +
+        (sc.feature ? ` (feature : ${sc.feature})` : '') +
+        (r.comment ? `\n  Commentaire testeur : ${r.comment}` : '')
+    ).join('\n');
+
+    const campaignName = state.session.name || 'Campagne sans nom';
+    const prompt = `Tu es un expert QA senior. Voici les scénarios en échec lors de la campagne "${campaignName}" :\n\n${lines}\n\nGénère une analyse structurée en JSON avec :\n1. "summary" : tableau de 3 bullets résumant les zones à risque\n2. "causes" : tableau d'objets { "feature": "...", "cause": "..." } groupant les causes probables par feature\n3. "actions" : tableau de 3 actions correctives prioritaires\n\nRéponds uniquement avec le JSON, sans markdown.`;
+
+    try {
+        const raw  = await TestPilotAPI.LLM.call(prompt, { maxTokens: 800 });
+        const json = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
+
+        const summaryHtml = (json.summary || []).map(s => `<li>${esc(s)}</li>`).join('');
+        const causesHtml  = (json.causes  || []).map(c => `<li><strong>${esc(c.feature)}</strong> — ${esc(c.cause)}</li>`).join('');
+        const actionsHtml = (json.actions || []).map(a => `<li>${esc(a)}</li>`).join('');
+
+        block.innerHTML = `
+            <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#6c757d;margin-bottom:14px;">Analyse IA des échecs — ${esc(campaignName)}</div>
+            <div style="margin-bottom:14px;">
+                <div style="font-weight:600;margin-bottom:6px;">Zones à risque</div>
+                <ul style="margin:0 0 0 16px;font-size:0.88rem;">${summaryHtml}</ul>
+            </div>
+            <div style="margin-bottom:14px;">
+                <div style="font-weight:600;margin-bottom:6px;">Causes probables par feature</div>
+                <ul style="margin:0 0 0 16px;font-size:0.88rem;">${causesHtml}</ul>
+            </div>
+            <div>
+                <div style="font-weight:600;margin-bottom:6px;">Actions correctives prioritaires</div>
+                <ol style="margin:0 0 0 16px;font-size:0.88rem;">${actionsHtml}</ol>
+            </div>`;
+    } catch(e) {
+        const isConfig = /manquante|inaccessible|Ollama|provider|modèle/i.test(e.message);
+        block.innerHTML = `<div style="color:#dc3545;font-size:0.88rem;">${isConfig ? 'Configuration IA requise : ' : 'Erreur : '}${esc(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Analyser les échecs avec l\'IA';
     }
 }
 

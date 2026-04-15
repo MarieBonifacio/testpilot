@@ -209,6 +209,7 @@
         </div>
         <div class="export-btns">
             <button class="refresh-btn" onclick="loadReport()">↻ Actualiser</button>
+            <button class="btn-secondary" onclick="generateNarrative()" id="btnNarrative" disabled>Commentaire COMEP IA</button>
             <button class="btn-secondary" onclick="exportHTML()" id="btnExportHTML" disabled>Exporter HTML</button>
             <button class="btn-primary" onclick="printReport()" id="btnPrint" disabled>Imprimer / PDF</button>
         </div>
@@ -236,7 +237,7 @@ function rateColor(pct) {
     return pct >= 80 ? 'green' : pct >= 60 ? 'amber' : 'red';
 }
 
-let state = { projectId: null, report: null };
+let state = { projectId: null, report: null, narrative: null };
 
 async function loadReport() {
     if (!state.projectId) {
@@ -249,9 +250,11 @@ async function loadReport() {
     try {
         const report = await TestPilotAPI.Reports.comep(state.projectId);
         state.report = report;
+        state.narrative = null;
         renderReport(report);
         document.getElementById('btnExportHTML').disabled = false;
         document.getElementById('btnPrint').disabled = false;
+        document.getElementById('btnNarrative').disabled = false;
     } catch(e) {
         document.getElementById('reportContent').innerHTML = `<div class="empty"><p>Erreur : ${esc(e.message)}</p></div>`;
     }
@@ -261,6 +264,7 @@ function renderReport(r) {
     const el = document.getElementById('reportContent');
     el.innerHTML = `
         ${renderScoreSection(r)}
+        <div id="narrativeBlock" style="display:none;"></div>
         ${renderKPIs(r)}
         <div class="two-col">
             ${renderFeatures(r)}
@@ -481,11 +485,59 @@ function renderEmpty(type) {
     return `<div class="empty"><div class="empty-icon">📋</div><p style="font-weight:600;">Aucune donnée disponible</p></div>`;
 }
 
+// ── Commentaire COMEP généré par l'IA ────────────────
+async function generateNarrative() {
+    if (!state.report) return;
+    if (!TestPilotAPI?.LLM?.call) {
+        alert('Module LLM non disponible. Configurez un provider IA dans les paramètres.');
+        return;
+    }
+    const btn = document.getElementById('btnNarrative');
+    const block = document.getElementById('narrativeBlock');
+    if (!block) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Génération en cours…';
+    block.style.display = 'block';
+    block.innerHTML = '<div class="section"><div style="color:var(--text-muted);font-size:0.9rem;">Interrogation du modèle IA…</div></div>';
+
+    const r = state.report;
+    const highRisks   = (r.residualRisks || []).filter(x => x.level === 'HIGH').length;
+    const mediumRisks = (r.residualRisks || []).filter(x => x.level === 'MEDIUM').length;
+    const topRecs     = (r.recommendations || []).slice(0, 3).map(x => x.text).join(' | ');
+
+    const prompt = `Tu es un expert QA senior. Rédige un commentaire de passage en COMEP (2 à 3 paragraphes, ton formel, en français) à partir de ces indicateurs qualité :\n\nProjet : ${r.project?.name || '—'}\nScore de confiance : ${r.score.value}/100 (${r.score.level})\nCouverture des scénarios : ${r.summary.coverageRate}%\nTraçabilité exigences : ${r.summary.traceRate}%\nTaux de succès (dernière campagne) : ${r.summary.lastPassRate !== null ? r.summary.lastPassRate + '%' : 'non disponible'}\nTaux de fuite : ${r.summary.lastLeakRate !== null ? r.summary.lastLeakRate + '%' : 'non disponible'}\nScénarios TNR : ${r.summary.tnr}\nRisques résiduels HIGH : ${highRisks} | MEDIUM : ${mediumRisks}\nPrincipales recommandations : ${topRecs || '—'}\n\nLe commentaire doit :\n1. Rappeler brièvement le contexte et les résultats clés\n2. Mentionner les principaux points de risque ou de vigilance\n3. Conclure par une recommandation go/no-go motivée et claire\n\nRéponds uniquement avec le texte du commentaire, sans titre ni balise.`;
+
+    try {
+        const narrative = await TestPilotAPI.LLM.call(prompt, { maxTokens: 600 });
+        state.narrative = narrative; // store for export
+        const paras = narrative.split(/\n+/).filter(Boolean).map(p => `<p style="margin:0 0 12px;">${esc(p)}</p>`).join('');
+        block.innerHTML = `
+            <div class="section">
+                <div class="section-title">Commentaire COMEP — Généré par IA</div>
+                <div style="font-size:0.9rem;line-height:1.7;color:var(--text);">${paras}</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:10px;">Généré le ${new Date().toLocaleString('fr-FR')} — à relire et adapter avant présentation.</div>
+            </div>`;
+    } catch(e) {
+        const isConfig = /manquante|inaccessible|Ollama|provider|modèle/i.test(e.message);
+        block.innerHTML = `<div class="section"><div style="color:var(--danger);font-size:0.88rem;">${isConfig ? 'Configuration IA requise : ' : 'Erreur : '}${esc(e.message)}</div></div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Commentaire COMEP IA';
+    }
+}
+
 // ── Export HTML ────────────────────────────────────────
 function exportHTML() {
     if (!state.report) return;
     const content = document.getElementById('reportContent').innerHTML;
     const r = state.report;
+    const narrativeSection = state.narrative
+        ? `<div style="background:#eaf4e8;border-left:4px solid #3B6D11;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+               <div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#3B6D11;margin-bottom:10px;">Commentaire COMEP — Généré par IA</div>
+               ${state.narrative.split(/\n+/).filter(Boolean).map(p => `<p style="margin:0 0 10px;font-size:0.9rem;line-height:1.7;">${esc(p)}</p>`).join('')}
+           </div>`
+        : '';
     const html = `<!DOCTYPE html>
 <html lang="fr"><head>
 <meta charset="UTF-8">
@@ -499,6 +551,7 @@ function exportHTML() {
 <div class="container">
   <h1 style="color:#3B6D11;margin-bottom:8px;">Rapport COMEP — ${esc(r.project?.name || '—')}</h1>
   <p style="color:#6c757d;margin-bottom:24px;">Généré le ${fmtDateTime(r.generated_at)}</p>
+  ${narrativeSection}
   ${content}
 </div>
 </body></html>`;
