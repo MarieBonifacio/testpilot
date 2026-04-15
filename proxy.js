@@ -856,7 +856,7 @@ function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
 app.get("/api/ollama/health", async (req, res) => {
   const host = req.query.host || "http://localhost:11434";
   try {
-    const { status } = await ollamaRequest("GET", host, "/api/version", null, 5000);
+    const { status } = await module.exports.ollamaRequest("GET", host, "/api/version", null, 5000);
     if (status === 200) {
       res.json({ ok: true });
     } else {
@@ -875,7 +875,7 @@ app.get("/api/ollama/health", async (req, res) => {
 app.get("/api/ollama/models", async (req, res) => {
   const host = req.query.host || "http://localhost:11434";
   try {
-    const { status, body } = await ollamaRequest("GET", host, "/api/tags", null, 5000);
+    const { status, body } = await module.exports.ollamaRequest("GET", host, "/api/tags", null, 5000);
     if (status !== 200) {
       return res.status(502).json({ error: `Ollama HTTP ${status}` });
     }
@@ -907,7 +907,7 @@ app.post("/api/ollama/chat", async (req, res) => {
   };
 
   try {
-    const { status, body } = await ollamaRequest("POST", ollamaHost, "/v1/chat/completions", payload, 120000);
+    const { status, body } = await module.exports.ollamaRequest("POST", ollamaHost, "/v1/chat/completions", payload, 120000);
     if (status !== 200) {
       const errMsg = typeof body === "object" ? (body.error || JSON.stringify(body)) : body;
       return res.status(502).json({ error: `Ollama ${status} : ${errMsg}` });
@@ -1691,26 +1691,31 @@ app.use((req, res) => {
 // ██  START SERVER
 // ══════════════════════════════════════════════════════
 
-app.listen(PORT, () => {
-  console.log("\x1b[32m");
-  console.log("  ✈  TestPilot Server v2.0");
-  console.log("  ─────────────────────────────────────────");
-  console.log(`  App       → http://localhost:${PORT}`);
-  console.log(`  API       → http://localhost:${PORT}/api/`);
-  console.log(`  Proxy LLM → http://localhost:${PORT}/api/messages`);
-  console.log(`  Database  → ${dbPath}`);
-  console.log(`  Clé API   → ${ENV_KEY ? "✓ Variable ANTHROPIC_API_KEY" : "⚠  Transmise par le client"}`);
-  console.log("  ─────────────────────────────────────────");
-  console.log("  Endpoints disponibles:");
-  console.log("    GET    /api/projects");
-  console.log("    GET    /api/projects/:id/scenarios");
-  console.log("    GET    /api/projects/:id/stats");
-  console.log("    POST   /api/projects/:id/scenarios");
-  console.log("    ...et plus");
-  console.log("  ─────────────────────────────────────────");
-  console.log("  Ctrl+C pour arrêter");
-  console.log("\x1b[0m");
-});
+// Export pour les tests (Supertest importe `app` sans démarrer le serveur)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log("\x1b[32m");
+    console.log("  ✈  TestPilot Server v2.0");
+    console.log("  ─────────────────────────────────────────");
+    console.log(`  App       → http://localhost:${PORT}`);
+    console.log(`  API       → http://localhost:${PORT}/api/`);
+    console.log(`  Proxy LLM → http://localhost:${PORT}/api/messages`);
+    console.log(`  Database  → ${dbPath}`);
+    console.log(`  Clé API   → ${ENV_KEY ? "✓ Variable ANTHROPIC_API_KEY" : "⚠  Transmise par le client"}`);
+    console.log("  ─────────────────────────────────────────");
+    console.log("  Endpoints disponibles:");
+    console.log("    GET    /api/projects");
+    console.log("    GET    /api/projects/:id/scenarios");
+    console.log("    GET    /api/projects/:id/stats");
+    console.log("    POST   /api/projects/:id/scenarios");
+    console.log("    ...et plus");
+    console.log("  ─────────────────────────────────────────");
+    console.log("  Ctrl+C pour arrêter");
+    console.log("\x1b[0m");
+  });
+}
+
+module.exports = { app, db, ollamaRequest };
 
 // ── Graceful shutdown ────────────────────────────────
 function shutdown(signal) {
