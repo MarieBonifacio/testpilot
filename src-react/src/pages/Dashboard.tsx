@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useProject } from '../lib/hooks';
-import { projectsApi, scenariosApi, campaignsApi, productionBugsApi } from '../lib/api';
-import type { Scenario, LeakRateKPI } from '../types';
-import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus, Bug } from 'lucide-react';
+import { projectsApi, scenariosApi, campaignsApi, productionBugsApi, kpisApi } from '../lib/api';
+import type { Scenario, LeakRateKPI, TnrDurationKPI, FlakinessKPI } from '../types';
+import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus, Bug, Timer, Activity } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import { formatDuration } from '../lib/duration';
 
 interface FeatureStats {
   name: string;
@@ -31,7 +32,9 @@ export function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [recentCampaigns, setRecentCampaigns] = useState<CampaignKpi[]>([]);
   const [kpiAggregates, setKpiAggregates] = useState<KpiAggregates | null>(null);
-  const [leakKpi, setLeakKpi] = useState<LeakRateKPI | null>(null);
+  const [leakKpi, setLeakKpi]     = useState<LeakRateKPI | null>(null);
+  const [tnrKpi, setTnrKpi]       = useState<TnrDurationKPI | null>(null);
+  const [flakinessKpi, setFlakinessKpi] = useState<FlakinessKPI | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -42,11 +45,13 @@ export function Dashboard() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [scenarios, projectStats, kpisData, leakData] = await Promise.all([
+      const [scenarios, projectStats, kpisData, leakData, tnrData, flakyData] = await Promise.all([
         scenariosApi.list(projectId),
         projectsApi.getStats(projectId).catch(() => ({ total: 0, accepted: 0, tnr_count: 0, critical: 0, features: [] })),
         campaignsApi.getKpis(projectId).catch(() => ({ campaigns: [], aggregates: null })),
         productionBugsApi.getLeakRate(projectId).catch(() => null),
+        kpisApi.getTnrDuration(projectId).catch(() => null),
+        kpisApi.getFlakiness(projectId).catch(() => null),
       ]);
 
       setStats({
@@ -56,6 +61,8 @@ export function Dashboard() {
       });
 
       setLeakKpi(leakData);
+      setTnrKpi(tnrData);
+      setFlakinessKpi(flakyData);
 
       setRecentCampaigns((kpisData.campaigns || []).slice(-5).reverse());
       setKpiAggregates(kpisData.aggregates || null);
@@ -371,6 +378,129 @@ export function Dashboard() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Widget Durée TNR */}
+      {tnrKpi && (
+        <div className="mt-8">
+          <div className="text-[0.72rem] font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Durée TNR</div>
+          <div className="rounded-lg p-4 flex items-center gap-6"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+            <Timer size={32} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            {/* Valeur principale */}
+            <div className="flex-shrink-0" style={{ minWidth: 90 }}>
+              <div className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
+                {tnrKpi.average_duration_formatted ?? '—'}
+              </div>
+              <div className="text-[0.7rem] font-bold uppercase tracking-wide mt-0.5" style={{ color: 'var(--text-dim)' }}>Durée moy. TNR</div>
+            </div>
+            <div style={{ width: 1, height: 40, background: 'var(--border)', flexShrink: 0 }} />
+            {/* Min / Max */}
+            <div className="flex gap-4">
+              <div>
+                <div className="text-sm font-semibold" style={{ color: 'var(--success)' }}>
+                  {tnrKpi.min_duration_seconds !== null ? formatDuration(tnrKpi.min_duration_seconds) : '—'}
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>min</div>
+              </div>
+              <div>
+                <div className="text-sm font-semibold" style={{ color: 'var(--warning)' }}>
+                  {tnrKpi.max_duration_seconds !== null ? formatDuration(tnrKpi.max_duration_seconds) : '—'}
+                </div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>max</div>
+              </div>
+            </div>
+            {/* Tendance */}
+            <div className="flex items-center gap-1.5">
+              {tnrKpi.trend === 'improving'  && <TrendingDown size={16} style={{ color: 'var(--success)' }} />}
+              {tnrKpi.trend === 'degrading'  && <TrendingUp   size={16} style={{ color: 'var(--danger)'  }} />}
+              {tnrKpi.trend === 'stable'     && <Minus        size={16} style={{ color: 'var(--text-muted)' }} />}
+              <span className="text-xs font-semibold" style={{ color: tnrKpi.trend === 'improving' ? 'var(--success)' : tnrKpi.trend === 'degrading' ? 'var(--danger)' : 'var(--text-muted)' }}>
+                {tnrKpi.trend === 'improving' ? 'En amélioration' : tnrKpi.trend === 'degrading' ? 'En dégradation' : 'Stable'}
+              </span>
+            </div>
+            {/* Objectif */}
+            {tnrKpi.target_duration_seconds !== null && tnrKpi.average_duration_seconds !== null && (
+              <div className="flex-1">
+                <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-muted)' }}>
+                  <span>vs objectif ({formatDuration(tnrKpi.target_duration_seconds)})</span>
+                  <span style={{ color: tnrKpi.average_duration_seconds <= tnrKpi.target_duration_seconds ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
+                    {tnrKpi.average_duration_seconds <= tnrKpi.target_duration_seconds ? 'OK' : 'Dépassé'}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
+                  <div className="h-full rounded-full transition-all" style={{
+                    width: `${Math.min(100, (tnrKpi.average_duration_seconds / tnrKpi.target_duration_seconds) * 100)}%`,
+                    background: tnrKpi.average_duration_seconds <= tnrKpi.target_duration_seconds ? 'var(--success)' : 'var(--danger)'
+                  }} />
+                </div>
+              </div>
+            )}
+            {/* Mini sparkline des 10 dernières sessions */}
+            {tnrKpi.last_10_sessions.length >= 2 && (
+              <div className="flex-shrink-0">
+                <svg width={80} height={28}>
+                  {(() => {
+                    const vals = tnrKpi.last_10_sessions.map(s => s.duration_seconds);
+                    const maxV = Math.max(...vals, 1);
+                    const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * 80},${28 - (v / maxV) * 26}`).join(' ');
+                    return <polyline fill="none" stroke="var(--accent)" strokeWidth="1.5" points={pts} />;
+                  })()}
+                </svg>
+                <div className="text-[0.65rem] text-center" style={{ color: 'var(--text-dim)' }}>10 dernières</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Widget Flakiness */}
+      {flakinessKpi !== null && flakinessKpi.total_scenarios_count > 0 && (
+        <div className="mt-6">
+          <div className="text-[0.72rem] font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Stabilité des tests</div>
+          <div className="rounded-lg p-4 flex items-center gap-6"
+            style={{
+              background: 'var(--bg-elevated)',
+              border: `1px solid ${flakinessKpi.stability_rate >= 90 ? 'var(--success)' : flakinessKpi.stability_rate >= 75 ? 'var(--warning)' : 'var(--danger)'}`,
+            }}>
+            <Activity size={32} style={{ color: flakinessKpi.stability_rate >= 90 ? 'var(--success)' : flakinessKpi.stability_rate >= 75 ? 'var(--warning)' : 'var(--danger)', flexShrink: 0 }} />
+            {/* Taux stabilité */}
+            <div className="flex-shrink-0" style={{ minWidth: 80 }}>
+              <div className="text-2xl font-bold" style={{ color: flakinessKpi.stability_rate >= 90 ? 'var(--success)' : flakinessKpi.stability_rate >= 75 ? 'var(--warning)' : 'var(--danger)' }}>
+                {flakinessKpi.stability_rate}%
+              </div>
+              <div className="text-[0.7rem] font-bold uppercase tracking-wide mt-0.5" style={{ color: 'var(--text-dim)' }}>Stabilité</div>
+            </div>
+            <div style={{ width: 1, height: 40, background: 'var(--border)', flexShrink: 0 }} />
+            {/* Compteurs */}
+            <div className="flex gap-4">
+              <div>
+                <div className="text-lg font-bold" style={{ color: 'var(--warning)' }}>{flakinessKpi.flaky_scenarios_count}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>scénarios flaky</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold" style={{ color: 'var(--text)' }}>{flakinessKpi.total_scenarios_count}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>suivis</div>
+              </div>
+            </div>
+            {/* Top flaky */}
+            {flakinessKpi.most_flaky.length > 0 && (
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Tests les plus instables</div>
+                <div className="space-y-1">
+                  {flakinessKpi.most_flaky.slice(0, 3).map(s => (
+                    <div key={s.scenario_id} className="flex items-center gap-2">
+                      <span className="text-[0.68rem] px-1 py-0.5 rounded font-bold" style={{ background: 'var(--warning-bg)', color: 'var(--warning)', whiteSpace: 'nowrap' }}>
+                        {s.flakiness_rate}%
+                      </span>
+                      <span className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{s.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

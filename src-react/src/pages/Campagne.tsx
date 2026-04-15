@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useProject } from '../lib/hooks';
-import { scenariosApi, sessionsApi, campaignsApi, llmApi } from '../lib/api';
-import type { Scenario, Session } from '../types';
-import { CheckCircle, XCircle, Ban, Clock, FlaskConical, Plus, Archive, RotateCcw, MessageSquare, Brain } from 'lucide-react';
+import { scenariosApi, sessionsApi, campaignsApi, llmApi, kpisApi } from '../lib/api';
+import type { Scenario, Session, FlakinessKPI } from '../types';
+import { CheckCircle, XCircle, Ban, Clock, FlaskConical, Plus, Archive, RotateCcw, MessageSquare, Brain, Timer, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { formatDuration } from '../lib/duration';
 
 type DisplayStatus = 'pass' | 'fail' | 'blocked';
 
@@ -25,14 +26,27 @@ export function Campagne() {
   const [error, setError] = useState<string | null>(null);
   const [commentOpen, setCommentOpen] = useState<number | null>(null);
   const [filterTNR, setFilterTNR] = useState(false);
+  const [isTNRSession, setIsTNRSession] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [aiAnalysing, setAiAnalysing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  // Timer session
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Durée archivée
+  const [lastDurationSeconds, setLastDurationSeconds] = useState<number | null>(null);
+  // Flakiness
+  const [flakinessKpi, setFlakinessKpi] = useState<FlakinessKPI | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
     loadData();
   }, [projectId]);
+
+  // Nettoyage timer au démontage
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
 
   const loadData = async () => {
     if (!projectId) return;
@@ -48,6 +62,9 @@ export function Campagne() {
       // Sessions ouvertes (sans finished_at)
       const open = sessions.filter((s: Session) => !s.finished_at);
       setPendingSessions(open);
+
+      // Charger flakiness en arrière-plan (non bloquant)
+      kpisApi.getFlakiness(projectId).then(setFlakinessKpi).catch(() => null);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -60,10 +77,12 @@ export function Campagne() {
     setError(null);
     try {
       const now = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      const session = await sessionsApi.create(projectId, { name: `Campagne ${now}` });
+      const session = await sessionsApi.create(projectId, { name: `Campagne ${now}`, is_tnr: isTNRSession });
       setCurrentSession(session);
       setResults({});
       setArchived(false);
+      setLastDurationSeconds(null);
+      startTimer(session.started_at);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -73,6 +92,21 @@ export function Campagne() {
     setCurrentSession(session);
     setResults({});
     setArchived(false);
+    setLastDurationSeconds(null);
+    startTimer(session.started_at);
+  };
+
+  const startTimer = (startedAt: string) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    const startMs = new Date(startedAt).getTime();
+    const tick = () => setElapsed(Math.floor((Date.now() - startMs) / 1000));
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    setElapsed(0);
   };
 
   const setResult = async (scenarioId: number, status: DisplayStatus) => {
@@ -108,7 +142,11 @@ export function Campagne() {
     setError(null);
     try {
       // 1. Terminer la session
-      await sessionsApi.finish(currentSession.id);
+      const finishResult = await sessionsApi.finish(currentSession.id);
+      stopTimer();
+      if (finishResult.duration_seconds != null) {
+        setLastDurationSeconds(finishResult.duration_seconds);
+      }
 
       // 2. Calculer les KPIs
       const passCount    = resultList.filter(r => r.status === 'pass').length;
@@ -227,6 +265,19 @@ export function Campagne() {
             <Plus size={14} />
             Nouvelle session
           </button>
+          {!currentSession && (
+            <button
+              onClick={() => setIsTNRSession(f => !f)}
+              className="px-3 py-1.5 rounded text-sm font-semibold flex items-center gap-1.5"
+              style={isTNRSession
+                ? { border: '1px solid var(--purple)', background: 'var(--purple-bg)', color: 'var(--purple)' }
+                : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }}
+              title="Marquer la prochaine session comme Campagne TNR"
+            >
+              <ShieldCheck size={13} />
+              Campagne TNR
+            </button>
+          )}
           {currentSession && (
             <button
               className="btn btn-success"
@@ -258,6 +309,11 @@ export function Campagne() {
           <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--success)' }}>
             <CheckCircle size={15} />
             Campagne archivée avec succès — visible dans Historique et COMEP.
+            {lastDurationSeconds != null && (
+              <span className="ml-auto font-normal text-xs flex items-center gap-1" style={{ color: 'var(--success)' }}>
+                <Timer size={12} /> Durée : {formatDuration(lastDurationSeconds)}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -313,7 +369,17 @@ export function Campagne() {
           <span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>
             Session active : <strong>{currentSession.session_name}</strong>
           </span>
-          <span className="text-xs ml-auto" style={{ color: 'var(--text-dim)' }}>
+          {isTNRSession && (
+            <span className="text-[0.68rem] font-bold px-1.5 py-0.5 rounded"
+              style={{ background: 'var(--purple-bg)', color: 'var(--purple)', border: '1px solid var(--purple)' }}>
+              TNR
+            </span>
+          )}
+          <span className="flex items-center gap-1 text-xs ml-auto" style={{ color: 'var(--text-dim)' }}>
+            <Timer size={12} />
+            {formatDuration(elapsed)}
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-dim)' }}>
             {progress}% complété
           </span>
         </div>
@@ -385,6 +451,19 @@ export function Campagne() {
                       <span className={`badge badge-type ${sc.scenario_type}`}>{sc.scenario_type}</span>
                       <span className={`badge badge-priority ${sc.priority}`}>{sc.priority}</span>
                       {sc.is_tnr && <span className="badge-tnr">TNR</span>}
+                      {sc.id != null && flakinessKpi && (() => {
+                        const f = flakinessKpi.most_flaky.find(f => f.scenario_id === sc.id);
+                        if (!f || f.flakiness_rate < 10) return null;
+                        return (
+                          <span
+                            className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                            style={{ background: 'var(--warning-bg, #fff8e1)', color: 'var(--warning)', border: '1px solid var(--warning)' }}
+                            title={`Flakiness : ${f.flakiness_rate.toFixed(1)}%`}
+                          >
+                            <AlertTriangle size={10} />{f.flakiness_rate.toFixed(0)}%
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 

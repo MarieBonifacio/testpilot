@@ -301,3 +301,63 @@ export interface ProductionBugListResponse {
   limit: number;
   pages: number;
 }
+
+// ── P4.2 Durée TNR + Flakiness ───────────────────────
+export interface TnrDurationKPI {
+  average_duration_seconds: number | null;
+  average_duration_formatted: string | null;
+  min_duration_seconds: number | null;
+  max_duration_seconds: number | null;
+  last_10_sessions: {
+    id: number;
+    date: string;
+    session_name: string;
+    duration_seconds: number;
+    duration_formatted: string;
+    scenario_count: number;
+  }[];
+  trend: 'improving' | 'stable' | 'degrading';
+  target_duration_seconds: number | null;
+}
+
+export interface FlakinessKPI {
+  global_flakiness_rate: number;
+  flaky_scenarios_count: number;
+  total_scenarios_count: number;
+  stability_rate: number;
+  most_flaky: {
+    scenario_id: number;
+    scenario_ref: string;
+    title: string;
+    feature: string | null;
+    priority: string;
+    flakiness_rate: number;
+    total_executions: number;
+    flaky_changes: number;
+    last_change: string | null;
+    last_from: string | null;
+    last_to: string | null;
+  }[];
+  by_feature: Record<string, { count: number; flaky_count: number }>;
+}
+
+export interface FlakinessHistory {
+  history: {
+    id: number;
+    session_id: number;
+    previous_status: string | null;
+    new_status: string;
+    is_flaky_change: number;
+    detected_at: string;
+    session_name: string;
+    finished_at: string;
+  }[];
+  stats: {
+    scenario_id: number;
+    total_executions: number;
+    flaky_changes: number;
+    flakiness_rate: number;
+    last_status: string | null;
+    last_calculated: string;
+  } | null;
+}

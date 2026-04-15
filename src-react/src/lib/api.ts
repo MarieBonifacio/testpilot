@@ -9,6 +9,7 @@ import type {
   User, AuthState,
   Notification,
   ProductionBug, LeakRateKPI, ProductionBugListResponse,
+  TnrDurationKPI, FlakinessKPI, FlakinessHistory,
 } from '../types';
 
 const BASE_URL = '';
@@ -130,12 +131,14 @@ export const analysesApi = {
 export const sessionsApi = {
   list:      (projectId: number) => api.get<Session[]>(`/api/projects/${projectId}/sessions`),
   get:       (id: number)        => api.get<Session>(`/api/sessions/${id}`),
-  create:    (projectId: number, data: { name: string }) =>
+  create:    (projectId: number, data: { name: string; is_tnr?: boolean }) =>
     api.post<Session>(`/api/projects/${projectId}/sessions`, {
-      session_name: data.name,
+      session_name:   data.name,
       scenario_count: 0,
+      is_tnr:         data.is_tnr ? 1 : 0,
     }),
-  finish:    (id: number)        => api.put<Session>(`/api/sessions/${id}/finish`, {}),
+  finish:    (id: number)        => api.put<{ finished: boolean; duration_seconds: number | null }>(`/api/sessions/${id}/finish`, {}),
+  setTNR:    (id: number, is_tnr: boolean) => api.patch<{ updated: boolean }>(`/api/sessions/${id}/is-tnr`, { is_tnr }),
   addResult: (sessionId: number, data: { scenario_id: number; status: string; notes?: string }) =>
     api.post<SessionResult>(`/api/sessions/${sessionId}/results`, {
       scenario_id: data.scenario_id,
@@ -474,4 +477,21 @@ export const productionBugsApi = {
     api.delete<{ deleted: boolean }>(`/api/production-bugs/${id}`),
   getLeakRate: (projectId: number) =>
     api.get<LeakRateKPI>(`/api/projects/${projectId}/kpis/leak-rate`),
+};
+
+// ══════════════════════════════════════════════════════
+// P4.2 — KPIs Durée TNR + Flakiness
+// ══════════════════════════════════════════════════════
+export const kpisApi = {
+  getTnrDuration: (projectId: number) =>
+    api.get<TnrDurationKPI>(`/api/projects/${projectId}/kpis/tnr-duration`),
+  setTnrTarget: (projectId: number, targetMinutes: number) =>
+    api.post<{ saved: boolean; target_duration_minutes: number }>(
+      `/api/projects/${projectId}/settings/tnr-target`,
+      { target_duration_minutes: targetMinutes }
+    ),
+  getFlakiness: (projectId: number) =>
+    api.get<FlakinessKPI>(`/api/projects/${projectId}/kpis/flakiness`),
+  getFlakinessHistory: (scenarioId: number) =>
+    api.get<FlakinessHistory>(`/api/scenarios/${scenarioId}/flakiness-history`),
 };

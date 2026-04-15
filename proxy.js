@@ -430,11 +430,32 @@ app.get("/api/sessions/:id", requireAuth, (req, res) => {
   });
 });
 
-// PUT /api/sessions/:id/finish - Terminer une session
+// PUT /api/sessions/:id/finish - Terminer une session + calculer durée + déclencher flakiness
 app.put("/api/sessions/:id/finish", requireAuth, (req, res) => {
-  db.run("UPDATE test_sessions SET finished_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id], function(err) {
+  const sessionId = req.params.id;
+  db.get("SELECT * FROM test_sessions WHERE id = ?", [sessionId], (err, session) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ finished: true });
+    if (!session) return res.status(404).json({ error: "Session non trouvée" });
+
+    const finishedAt = new Date().toISOString();
+    const startedAt  = session.started_at;
+    let durationSeconds = null;
+    if (startedAt) {
+      durationSeconds = Math.round((new Date(finishedAt) - new Date(startedAt)) / 1000);
+    }
+
+    db.run(
+      "UPDATE test_sessions SET finished_at = ?, duration_seconds = ? WHERE id = ?",
+      [finishedAt, durationSeconds, sessionId],
+      function(updateErr) {
+        if (updateErr) return res.status(500).json({ error: updateErr.message });
+        // Déclencher la détection flakiness en arrière-plan (non bloquant)
+        detectFlakinessForSession(sessionId).catch(e =>
+          console.warn("[flakiness] Erreur détection:", e.message)
+        );
+        res.json({ finished: true, duration_seconds: durationSeconds });
+      }
+    );
   });
 });
 
@@ -1229,6 +1250,296 @@ app.post("/api/clickup/create-batch", requireAuth, async (req, res) => {
   const ok    = results.filter(r => r.ok).length;
   const errors = results.filter(r => !r.ok).length;
   res.json({ created: ok, errors, results });
+});
+
+// ══════════════════════════════════════════════════════
+// ██  API KPIs P4.2 — Durée TNR + Flakiness
+// ══════════════════════════════════════════════════════
+
+// ── Helpers DB promisifiés (locaux) ──────────────────
+const dbRunP  = (sql, p=[]) => new Promise((res,rej) => db.run(sql,p,function(e){e?rej(e):res(this)}));
+const dbGetP  = (sql, p=[]) => new Promise((res,rej) => db.get(sql,p,(e,r)=>e?rej(e):res(r)));
+const dbAllP  = (sql, p=[]) => new Promise((res,rej) => db.all(sql,p,(e,r)=>e?rej(e):res(r)));
+
+// ── Fonction de détection flakiness ──────────────────
+/**
+ * Après clôture d'une session, compare le statut de chaque résultat
+ * avec le dernier statut connu pour ce scénario.
+ * Si changement ET intervalle < 24h → marqué flaky.
+ */
+async function detectFlakinessForSession(sessionId) {
+  const results = await dbAllP(
+    `SELECT tr.scenario_id, tr.status, s.finished_at AS session_finished
+     FROM test_results tr
+     JOIN test_sessions s ON s.id = tr.session_id
+     WHERE tr.session_id = ?`,
+    [sessionId]
+  );
+  if (!results.length) return;
+
+  for (const r of results) {
+    // Dernier résultat connu pour ce scénario dans une session antérieure
+    const prev = await dbGetP(
+      `SELECT tr.status, s.finished_at
+       FROM test_results tr
+       JOIN test_sessions s ON s.id = tr.session_id
+       WHERE tr.scenario_id = ? AND tr.session_id < ?
+       ORDER BY s.finished_at DESC
+       LIMIT 1`,
+      [r.scenario_id, sessionId]
+    );
+    if (!prev) {
+      // Première exécution — initialiser stats
+      await dbRunP(
+        `INSERT INTO scenario_flakiness_stats (scenario_id, total_executions, flaky_changes, flakiness_rate, last_status, last_calculated)
+         VALUES (?, 1, 0, 0.0, ?, datetime('now'))
+         ON CONFLICT(scenario_id) DO UPDATE SET
+           total_executions = total_executions + 1,
+           last_status = excluded.last_status,
+           last_calculated = datetime('now')`,
+        [r.scenario_id, r.status]
+      );
+      continue;
+    }
+
+    const hasChanged = prev.status !== r.status;
+    let isFlakyChange = 0;
+    if (hasChanged && prev.finished_at) {
+      const diffMs = new Date(r.session_finished || Date.now()) - new Date(prev.finished_at);
+      const diffHours = diffMs / (1000 * 60 * 60);
+      isFlakyChange = diffHours < 24 ? 1 : 0;
+    }
+
+    // Enregistrer le changement
+    if (hasChanged) {
+      await dbRunP(
+        `INSERT INTO scenario_status_changes (scenario_id, session_id, previous_status, new_status, is_flaky_change)
+         VALUES (?, ?, ?, ?, ?)`,
+        [r.scenario_id, sessionId, prev.status, r.status, isFlakyChange]
+      );
+    }
+
+    // Mettre à jour les stats agrégées
+    await dbRunP(
+      `INSERT INTO scenario_flakiness_stats (scenario_id, total_executions, flaky_changes, flakiness_rate, last_status, last_calculated)
+       VALUES (?, 1, ?, ?, ?, datetime('now'))
+       ON CONFLICT(scenario_id) DO UPDATE SET
+         total_executions = total_executions + 1,
+         flaky_changes    = flaky_changes + excluded.flaky_changes,
+         flakiness_rate   = CASE WHEN (total_executions + 1) > 0
+                              THEN ROUND((flaky_changes + excluded.flaky_changes) * 100.0 / (total_executions + 1), 1)
+                              ELSE 0 END,
+         last_status      = excluded.last_status,
+         last_calculated  = datetime('now')`,
+      [r.scenario_id, isFlakyChange, isFlakyChange > 0 ? 100 : 0, r.status]
+    );
+  }
+}
+
+/**
+ * PATCH /api/sessions/:id/is-tnr
+ * Marque/démarque une session comme TNR
+ */
+app.patch("/api/sessions/:id/is-tnr", requireAuth, (req, res) => {
+  const { is_tnr } = req.body;
+  db.run(
+    "UPDATE test_sessions SET is_tnr = ? WHERE id = ?",
+    [is_tnr ? 1 : 0, req.params.id],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: "Session non trouvée" });
+      res.json({ updated: true });
+    }
+  );
+});
+
+/**
+ * GET /api/projects/:id/kpis/tnr-duration
+ */
+app.get("/api/projects/:id/kpis/tnr-duration", requireAuth, async (req, res) => {
+  const projectId = req.params.id;
+  try {
+    const [sessions, setting] = await Promise.all([
+      dbAllP(
+        `SELECT id, session_name, started_at, finished_at, duration_seconds, scenario_count, is_tnr
+         FROM test_sessions
+         WHERE project_id = ? AND is_tnr = 1 AND finished_at IS NOT NULL AND duration_seconds IS NOT NULL
+         ORDER BY finished_at DESC
+         LIMIT 20`,
+        [projectId]
+      ),
+      dbGetP("SELECT tnr_target_minutes FROM project_kpi_settings WHERE project_id = ?", [projectId])
+    ]);
+
+    if (sessions.length === 0) {
+      return res.json({
+        average_duration_seconds: null,
+        average_duration_formatted: null,
+        min_duration_seconds: null,
+        max_duration_seconds: null,
+        last_10_sessions: [],
+        trend: "stable",
+        target_duration_seconds: setting?.tnr_target_minutes ? setting.tnr_target_minutes * 60 : null
+      });
+    }
+
+    const durations = sessions.map(s => s.duration_seconds);
+    const avg = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
+    const min = Math.min(...durations);
+    const max = Math.max(...durations);
+
+    // Tendance : comparer la moyenne des 3 dernières vs les 3 précédentes
+    let trend = "stable";
+    if (sessions.length >= 6) {
+      const recent = sessions.slice(0, 3).map(s => s.duration_seconds);
+      const older  = sessions.slice(3, 6).map(s => s.duration_seconds);
+      const avgRecent = recent.reduce((a, b) => a + b, 0) / recent.length;
+      const avgOlder  = older.reduce((a, b) => a + b, 0)  / older.length;
+      const delta = (avgRecent - avgOlder) / avgOlder;
+      if (delta < -0.05) trend = "improving";
+      else if (delta > 0.05) trend = "degrading";
+    }
+
+    const formatDuration = (s) => {
+      if (s < 60)   return `${s}s`;
+      if (s < 3600) return `${Math.floor(s / 60)}min ${s % 60}s`;
+      return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}min`;
+    };
+
+    res.json({
+      average_duration_seconds:   avg,
+      average_duration_formatted: formatDuration(avg),
+      min_duration_seconds:       min,
+      max_duration_seconds:       max,
+      last_10_sessions: sessions.slice(0, 10).map(s => ({
+        id:               s.id,
+        date:             s.finished_at,
+        session_name:     s.session_name,
+        duration_seconds: s.duration_seconds,
+        duration_formatted: formatDuration(s.duration_seconds),
+        scenario_count:   s.scenario_count
+      })),
+      trend,
+      target_duration_seconds: setting?.tnr_target_minutes ? setting.tnr_target_minutes * 60 : null
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * POST /api/projects/:id/settings/tnr-target
+ * Body: { target_duration_minutes: number }
+ */
+app.post("/api/projects/:id/settings/tnr-target", requireAuth, (req, res) => {
+  const { target_duration_minutes } = req.body;
+  if (!Number.isFinite(target_duration_minutes) || target_duration_minutes <= 0) {
+    return res.status(400).json({ error: "target_duration_minutes doit être un entier positif" });
+  }
+  db.run(
+    `INSERT INTO project_kpi_settings (project_id, tnr_target_minutes, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(project_id) DO UPDATE SET
+       tnr_target_minutes = excluded.tnr_target_minutes,
+       updated_at = datetime('now')`,
+    [req.params.id, Math.round(target_duration_minutes)],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ saved: true, target_duration_minutes: Math.round(target_duration_minutes) });
+    }
+  );
+});
+
+/**
+ * GET /api/projects/:id/kpis/flakiness
+ */
+app.get("/api/projects/:id/kpis/flakiness", requireAuth, async (req, res) => {
+  const projectId = req.params.id;
+  try {
+    const stats = await dbAllP(
+      `SELECT fs.scenario_id, fs.total_executions, fs.flaky_changes, fs.flakiness_rate,
+              fs.last_status, fs.last_calculated,
+              sc.title, sc.scenario_id AS scenario_ref, sc.feature_name, sc.priority
+       FROM scenario_flakiness_stats fs
+       JOIN scenarios sc ON sc.id = fs.scenario_id
+       WHERE sc.project_id = ?
+       ORDER BY fs.flakiness_rate DESC, fs.flaky_changes DESC`,
+      [projectId]
+    );
+
+    const total = stats.length;
+    const flakyCount = stats.filter(s => s.flakiness_rate > 0).length;
+    const globalRate = total > 0
+      ? Math.round(stats.reduce((a, s) => a + s.flakiness_rate, 0) / total * 10) / 10
+      : 0;
+
+    // Par feature
+    const byFeature = {};
+    stats.forEach(s => {
+      const f = s.feature_name || "Sans feature";
+      if (!byFeature[f]) byFeature[f] = { count: 0, flaky_count: 0 };
+      byFeature[f].count++;
+      if (s.flakiness_rate > 0) byFeature[f].flaky_count++;
+    });
+
+    // Dernière modification de statut pour chaque scénario flaky
+    const mostFlaky = await Promise.all(
+      stats.filter(s => s.flakiness_rate > 0).slice(0, 10).map(async s => {
+        const last = await dbGetP(
+          `SELECT detected_at, previous_status, new_status
+           FROM scenario_status_changes
+           WHERE scenario_id = ?
+           ORDER BY detected_at DESC LIMIT 1`,
+          [s.scenario_id]
+        );
+        return {
+          scenario_id:    s.scenario_id,
+          scenario_ref:   s.scenario_ref,
+          title:          s.title,
+          feature:        s.feature_name,
+          priority:       s.priority,
+          flakiness_rate: s.flakiness_rate,
+          total_executions: s.total_executions,
+          flaky_changes:  s.flaky_changes,
+          last_change:    last?.detected_at || null,
+          last_from:      last?.previous_status || null,
+          last_to:        last?.new_status || null
+        };
+      })
+    );
+
+    res.json({
+      global_flakiness_rate: globalRate,
+      flaky_scenarios_count: flakyCount,
+      total_scenarios_count: total,
+      stability_rate: total > 0 ? Math.round((1 - flakyCount / total) * 100 * 10) / 10 : 100,
+      most_flaky: mostFlaky,
+      by_feature: byFeature
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/**
+ * GET /api/scenarios/:id/flakiness-history
+ */
+app.get("/api/scenarios/:id/flakiness-history", requireAuth, async (req, res) => {
+  try {
+    const [history, stats] = await Promise.all([
+      dbAllP(
+        `SELECT sc.id, sc.session_id, sc.previous_status, sc.new_status, sc.is_flaky_change,
+                sc.detected_at, ts.session_name, ts.finished_at
+         FROM scenario_status_changes sc
+         JOIN test_sessions ts ON ts.id = sc.session_id
+         WHERE sc.scenario_id = ?
+         ORDER BY sc.detected_at DESC
+         LIMIT 50`,
+        [req.params.id]
+      ),
+      dbGetP(
+        "SELECT * FROM scenario_flakiness_stats WHERE scenario_id = ?",
+        [req.params.id]
+      )
+    ]);
+    res.json({ history, stats: stats || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ══════════════════════════════════════════════════════

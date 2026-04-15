@@ -123,7 +123,42 @@ const db = new sqlite3.Database(dbPath, (err) => {
           )`,
           `CREATE INDEX IF NOT EXISTS idx_production_bugs_project  ON production_bugs(project_id)`,
           `CREATE INDEX IF NOT EXISTS idx_production_bugs_scenario ON production_bugs(scenario_id)`,
-          `CREATE INDEX IF NOT EXISTS idx_production_bugs_date     ON production_bugs(detected_date)`
+          `CREATE INDEX IF NOT EXISTS idx_production_bugs_date     ON production_bugs(detected_date)`,
+          // P4.2 : KPIs Durée TNR + Flakiness
+          // Colonnes additionnelles sur test_sessions (started_at/finished_at existent déjà)
+          `ALTER TABLE test_sessions ADD COLUMN is_tnr INTEGER DEFAULT 0`,
+          `ALTER TABLE test_sessions ADD COLUMN duration_seconds INTEGER`,
+          // Table tracking changements de statut par scénario (détection flakiness)
+          `CREATE TABLE IF NOT EXISTS scenario_status_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scenario_id INTEGER NOT NULL,
+            session_id INTEGER NOT NULL,
+            previous_status TEXT,
+            new_status TEXT NOT NULL,
+            is_flaky_change INTEGER DEFAULT 0,
+            detected_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+            FOREIGN KEY (session_id) REFERENCES test_sessions(id) ON DELETE CASCADE
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_status_changes_scenario ON scenario_status_changes(scenario_id)`,
+          `CREATE INDEX IF NOT EXISTS idx_status_changes_session  ON scenario_status_changes(session_id)`,
+          // Table stats agrégées de flakiness par scénario (recalculée à chaque session)
+          `CREATE TABLE IF NOT EXISTS scenario_flakiness_stats (
+            scenario_id INTEGER PRIMARY KEY,
+            total_executions INTEGER DEFAULT 0,
+            flaky_changes INTEGER DEFAULT 0,
+            flakiness_rate REAL DEFAULT 0.0,
+            last_status TEXT,
+            last_calculated TEXT,
+            FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+          )`,
+          // Table paramètres KPI par projet (objectif durée TNR)
+          `CREATE TABLE IF NOT EXISTS project_kpi_settings (
+            project_id INTEGER PRIMARY KEY,
+            tnr_target_minutes INTEGER,
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+          )`
         ];
 
         let pending = migrations.length;
