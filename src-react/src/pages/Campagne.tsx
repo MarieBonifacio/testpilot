@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useProject } from '../lib/hooks';
-import { scenariosApi, sessionsApi, campaignsApi } from '../lib/api';
+import { scenariosApi, sessionsApi, campaignsApi, llmApi } from '../lib/api';
 import type { Scenario, Session } from '../types';
-import { CheckCircle, XCircle, Ban, Clock, FlaskConical, Plus, Archive, RotateCcw, MessageSquare } from 'lucide-react';
+import { CheckCircle, XCircle, Ban, Clock, FlaskConical, Plus, Archive, RotateCcw, MessageSquare, Brain } from 'lucide-react';
 
 type DisplayStatus = 'pass' | 'fail' | 'blocked';
 
@@ -25,6 +25,9 @@ export function Campagne() {
   const [error, setError] = useState<string | null>(null);
   const [commentOpen, setCommentOpen] = useState<number | null>(null);
   const [filterTNR, setFilterTNR] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiAnalysing, setAiAnalysing] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -156,6 +159,28 @@ export function Campagne() {
     }
   };
 
+  const analyseFailures = async () => {
+    const failed = Object.values(results).filter(r => r.status === 'fail' || r.status === 'blocked');
+    if (failed.length === 0) { setAiError('Aucun échec ou blocage à analyser.'); return; }
+    setAiAnalysing(true);
+    setAiError(null);
+    setAiAnalysis(null);
+    const failLines = failed.map(r => {
+      const sc = scenarios.find(s => s.id === r.scenario_id);
+      const statusLabel = r.status === 'fail' ? 'FAIL' : 'BLOQUÉ';
+      return `- [${statusLabel}] ${sc?.title ?? r.scenario_id} (${sc?.feature_name ?? ''}) : ${r.comment || 'pas de commentaire'}`.trim();
+    }).join('\n');
+    const prompt = `Tu es un expert QA senior. Analyse les échecs et blocages suivants issus d'une campagne de recette :\n\n${failLines}\n\nPour chaque échec :\n1. Identifie la cause probable (bug, donnée de test, environnement, spécification ambigüe).\n2. Propose une action corrective concrète.\n3. Indique le niveau de risque résiduel (FAIBLE / MOY EN / ÉLEVÉ).\n\nRéponds en français, de façon structurée et concise.`;
+    try {
+      const analysis = await llmApi.call(prompt, { maxTokens: 1500 });
+      setAiAnalysis(analysis);
+    } catch (e) {
+      setAiError((e as Error).message);
+    } finally {
+      setAiAnalysing(false);
+    }
+  };
+
   const displayedScenarios = filterTNR
     ? scenarios.filter(s => s.is_tnr)
     : scenarios;
@@ -212,6 +237,17 @@ export function Campagne() {
               {archiving ? 'Archivage…' : 'Terminer et archiver'}
             </button>
           )}
+          {Object.values(results).some(r => r.status === 'fail' || r.status === 'blocked') && (
+            <button
+              className="btn btn-secondary"
+              onClick={analyseFailures}
+              disabled={aiAnalysing}
+              title="Analyser les échecs avec l'IA"
+            >
+              {aiAnalysing ? <div className="spinner" /> : <Brain size={14} />}
+              {aiAnalysing ? 'Analyse en cours…' : 'Analyser échecs IA'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -223,6 +259,21 @@ export function Campagne() {
             <CheckCircle size={15} />
             Campagne archivée avec succès — visible dans Historique et COMEP.
           </div>
+        </div>
+      )}
+
+      {/* AI failure analysis result */}
+      {aiError && <div className="error-msg mb-4">{aiError}</div>}
+      {aiAnalysis && (
+        <div className="panel mb-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Brain size={14} style={{ color: 'var(--accent)' }} />
+            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>Analyse IA des échecs</span>
+            <span className="text-[0.65rem] px-1.5 py-0.5 rounded ml-auto" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+              {llmApi.getActiveProviderLabel()}
+            </span>
+          </div>
+          <pre className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-muted)', fontFamily: 'inherit', margin: 0 }}>{aiAnalysis}</pre>
         </div>
       )}
 

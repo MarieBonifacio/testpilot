@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useProject } from '../lib/hooks';
-import { comepApi } from '../lib/api';
+import { comepApi, llmApi } from '../lib/api';
 import type { ComepReport } from '../types';
-import { ShieldCheck, AlertTriangle, Download, RefreshCw, TrendingUp } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Download, RefreshCw, TrendingUp, Brain } from 'lucide-react';
 
 function GaugeCanvas({ score }: { score: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -50,6 +50,9 @@ export function Comep() {
   const [report, setReport] = useState<ComepReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiComment, setAiComment] = useState<string | null>(null);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiCommentError, setAiCommentError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -67,6 +70,34 @@ export function Comep() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateComment = async () => {
+    if (!report) return;
+    setAiGenerating(true);
+    setAiCommentError(null);
+    setAiComment(null);
+    const { score, summary, residualRisks, recommendations, lastCampaign } = report;
+    const risksText = residualRisks.slice(0, 5).map(r => `- [${r.level}] ${r.reason}${r.title ? ` (${r.title})` : ''}`).join('\n') || 'Aucun risque résiduel identifié.';
+    const recoText = recommendations.slice(0, 3).map(r => `- ${r.text}`).join('\n') || 'Aucune recommandation.';
+    const campaignText = lastCampaign
+      ? `Dernière campagne : ${lastCampaign.total} tests, ${lastCampaign.pass} PASS, ${lastCampaign.fail} FAIL, ${lastCampaign.blocked} BLOQUÉS.`
+      : 'Aucune campagne exécutée.';
+    const prompt = `Tu es un expert QA. Rédige un commentaire COMEP de 3-5 phrases pour présenter en comité de mise en production le rapport suivant :\n\n`
+      + `Score de confiance : ${score.value}/100 (${score.level})\n`
+      + `Couverture : ${summary.coverageRate}% | Traçabilité : ${summary.traceRate}%\n`
+      + `${campaignText}\n`
+      + `Risques résiduels :\n${risksText}\n`
+      + `Recommandations prioritaires :\n${recoText}\n\n`
+      + `Le commentaire doit être professionnel, factuel et synthétique. Réponds en français.`;
+    try {
+      const comment = await llmApi.call(prompt, { maxTokens: 500 });
+      setAiComment(comment);
+    } catch (e) {
+      setAiCommentError((e as Error).message);
+    } finally {
+      setAiGenerating(false);
     }
   };
 
@@ -150,10 +181,16 @@ ${report.residualRisks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 
             Recalculer
           </button>
           {report && (
-            <button className="btn btn-secondary" onClick={exportHTML}>
-              <Download size={13} />
-              Exporter HTML/PDF
-            </button>
+            <>
+              <button className="btn btn-secondary" onClick={generateComment} disabled={aiGenerating}>
+                {aiGenerating ? <div className="spinner" /> : <Brain size={13} />}
+                {aiGenerating ? 'Génération…' : 'Commentaire IA'}
+              </button>
+              <button className="btn btn-secondary" onClick={exportHTML}>
+                <Download size={13} />
+                Exporter HTML/PDF
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -163,6 +200,28 @@ ${report.residualRisks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 
 
       {report && (
         <>
+          {/* AI COMEP comment */}
+          {aiCommentError && <div className="error-msg mb-4">{aiCommentError}</div>}
+          {aiComment && (
+            <div className="panel mb-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Brain size={14} style={{ color: 'var(--accent)' }} />
+                <span className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>Commentaire COMEP généré</span>
+                <span className="text-[0.65rem] px-1.5 py-0.5 rounded ml-auto" style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                  {llmApi.getActiveProviderLabel()}
+                </span>
+                <button
+                  className="text-xs px-2 py-0.5 rounded"
+                  style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  onClick={() => { navigator.clipboard?.writeText(aiComment); }}
+                >
+                  Copier
+                </button>
+              </div>
+              <p className="text-sm" style={{ color: 'var(--text)', lineHeight: 1.7, margin: 0 }}>{aiComment}</p>
+            </div>
+          )}
+
           {/* Score global */}
           <div className="panel mb-5 text-center">
             <GaugeCanvas score={report.score.value} />

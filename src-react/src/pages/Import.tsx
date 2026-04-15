@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useProject } from '../lib/hooks';
-import { importApi } from '../lib/api';
+import { importApi, llmApi } from '../lib/api';
 import type { ImportPreviewRow } from '../types';
 import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Trash2, Play } from 'lucide-react';
 
@@ -12,7 +12,6 @@ export function Import() {
   const [markTNR, setMarkTNR] = useState(false);
   const [autoAccept, setAutoAccept] = useState(false);
   const [useAI, setUseAI] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('testpilot_import_key') || '');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ imported: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,9 +41,8 @@ export function Import() {
     setError(null);
     setResult(null);
     try {
-      if (apiKey) localStorage.setItem('testpilot_import_key', apiKey);
       const buf = await file.arrayBuffer();
-      const res = await importApi.uploadExcel(projectId, buf, { markTNR, autoAccept, useAI, apiKey });
+      const res = await importApi.uploadExcel(projectId, buf, { markTNR, autoAccept, useAI });
       setResult({ imported: res.imported });
       setPreview(res.scenarios as ImportPreviewRow[]);
       setFile(null);
@@ -109,7 +107,7 @@ export function Import() {
             {[
               { checked: markTNR,     onChange: setMarkTNR,     label: 'Marquer tous les scénarios importés comme TNR' },
               { checked: autoAccept,  onChange: setAutoAccept,  label: 'Accepter automatiquement les scénarios importés' },
-              { checked: useAI,       onChange: setUseAI,       label: 'Normalisation IA (compléter les GWT incomplets via Claude)' },
+              { checked: useAI,       onChange: setUseAI,       label: `Normalisation IA (compléter les GWT incomplets via ${llmApi.getActiveProviderLabel()})` },
             ].map(({ checked, onChange, label }) => (
               <label key={label} className="flex items-center gap-2.5 text-sm cursor-pointer">
                 <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
@@ -118,10 +116,11 @@ export function Import() {
               </label>
             ))}
             {useAI && (
-              <div className="mt-2">
-                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Clé API Anthropic (pour la normalisation IA)</div>
-                <input type="password" placeholder="sk-ant-api03-..." value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)} className="w-full" />
+              <div className="mt-2 rounded p-3" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)' }}>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Provider actif : <strong style={{ color: 'var(--accent)' }}>{llmApi.getActiveProviderLabel()}</strong>.
+                  Configurez le provider et sa clé dans la page <strong>Rédaction</strong>.
+                </div>
               </div>
             )}
           </div>

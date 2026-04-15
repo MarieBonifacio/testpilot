@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useProject, useAuth } from '../lib/hooks';
 import { scenariosApi, analysesApi, usersApi } from '../lib/api';
 import type { Scenario, Analysis, User } from '../types';
-import { Play, CheckCircle, Download, Trash2, UserCheck, ShieldCheck, XCircle, Send } from 'lucide-react';
+import { Play, CheckCircle, Download, Trash2, UserCheck, ShieldCheck, XCircle, Send, RefreshCw } from 'lucide-react';
 
 type SourceType = 'user-story' | 'spec' | 'oral' | 'rule';
 type ProviderKey = 'anthropic' | 'openai' | 'mistral' | 'ollama';
@@ -21,6 +21,7 @@ interface ProviderSettings {
   key: string;
   model: string;
   endpoint: string;
+  host?: string;
   modelCustom?: string;
 }
 
@@ -52,7 +53,8 @@ const PROVIDERS: Record<ProviderKey, ProviderConfig> = {
     needsKey: false,
     endpointEditable: true,
     offline: true,
-    endpoint: 'http://localhost:11434/v1/chat/completions',
+    // Requests always go through the backend proxy — never direct from browser
+    endpoint: '/api/ollama/chat',
     models: ['llama3.2', 'mistral', 'qwen2.5-coder', 'phi4', 'deepseek-r1'],
   },
 };
@@ -67,16 +69,35 @@ export function Redaction() {
   const [sourceText, setSourceText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentProvider, setCurrentProvider] = useState<ProviderKey>('anthropic');
+  const [currentProvider, setCurrentProvider] = useState<ProviderKey>(() => {
+    try {
+      const stored = localStorage.getItem('testpilot_provider');
+      if (!stored) return 'anthropic';
+      const parsed = JSON.parse(stored) as Record<string, unknown>;
+      const current = parsed._current as ProviderKey | undefined;
+      return (current && ['anthropic','openai','mistral','ollama'].includes(current)) ? current : 'anthropic';
+    } catch { return 'anthropic'; }
+  });
   const [providerSettings, setProviderSettings] = useState<Record<ProviderKey, ProviderSettings>>(() => {
     const stored = localStorage.getItem('testpilot_provider');
     const parsed = stored ? JSON.parse(stored) : {};
     const result: Record<ProviderKey, ProviderSettings> = {} as Record<ProviderKey, ProviderSettings>;
     for (const [id, cfg] of Object.entries(PROVIDERS)) {
-      result[id as ProviderKey] = parsed[id] || { key: '', model: cfg.models[0], endpoint: cfg.endpoint || '' };
+      const saved = parsed[id] as ProviderSettings | undefined;
+      result[id as ProviderKey] = {
+        key:      saved?.key      ?? '',
+        model:    saved?.model    ?? cfg.models[0],
+        endpoint: saved?.endpoint ?? cfg.endpoint ?? '',
+        host:     saved?.host     ?? (id === 'ollama' ? 'http://localhost:11434' : ''),
+      };
     }
     return result;
   });
+
+  // Ollama dynamic models and status
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [ollamaStatus, setOllamaStatus] = useState<'unknown' | 'ok' | 'error'>('unknown');
+  const [ollamaChecking, setOllamaChecking] = useState(false);
 
   const isCP = user?.role === 'cp' || user?.role === 'admin';
 
@@ -100,9 +121,51 @@ export function Redaction() {
     usersApi.list().then(setUsers).catch(() => {});
   }, [isCP]);
 
+  // Persist provider settings + _current so vanilla pages see the correct active provider
   useEffect(() => {
-    localStorage.setItem('testpilot_provider', JSON.stringify(providerSettings));
-  }, [providerSettings]);
+    const stored = localStorage.getItem('testpilot_provider');
+    const existing = stored ? JSON.parse(stored) as Record<string, unknown> : {};
+    const toSave = { ...existing, ...providerSettings, _current: currentProvider };
+    localStorage.setItem('testpilot_provider', JSON.stringify(toSave));
+  }, [providerSettings, currentProvider]);
+
+  // Check Ollama health and fetch installed models
+  const checkOllama = useCallback(async () => {
+    const host = providerSettings.ollama.host || 'http://localhost:11434';
+    setOllamaChecking(true);
+    setOllamaStatus('unknown');
+    try {
+      const auth = JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string };
+      const headers: Record<string, string> = {};
+      if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`;
+      const res = await fetch(`/api/ollama/health?host=${encodeURIComponent(host)}`, { headers });
+      const data = await res.json() as { ok: boolean; error?: string };
+      if (data.ok) {
+        setOllamaStatus('ok');
+        const mRes = await fetch(`/api/ollama/models?host=${encodeURIComponent(host)}`, { headers });
+        if (mRes.ok) {
+          const mData = await mRes.json() as { models: string[] };
+          if (mData.models.length > 0) {
+            setOllamaModels(mData.models);
+            const curModel = providerSettings.ollama.model;
+            if (!mData.models.includes(curModel) && curModel !== '__custom__') {
+              setProviderSettings(prev => ({ ...prev, ollama: { ...prev.ollama, model: mData.models[0] } }));
+            }
+          }
+        }
+      } else {
+        setOllamaStatus('error');
+      }
+    } catch {
+      setOllamaStatus('error');
+    } finally {
+      setOllamaChecking(false);
+    }
+  }, [providerSettings.ollama.host, providerSettings.ollama.model]);
+
+  useEffect(() => {
+    if (currentProvider === 'ollama') checkOllama();
+  }, [currentProvider]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const buildPrompt = () => {
     const typeLabels: Record<SourceType, string> = {
@@ -166,13 +229,15 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
     if (provider.needsKey && !settings.key) throw new Error(`Clé API ${provider.label} manquante.`);
     if (!model) throw new Error('Aucun modèle sélectionné.');
 
+    const auth = JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string };
+    const bearerHeader = auth.token ? { Authorization: `Bearer ${auth.token}` } : {} as Record<string, string>;
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 90_000);
 
     try {
       if (currentProvider === 'anthropic') {
         // Via proxy backend /api/messages — la clé est transmise en header côté serveur
-        const auth = JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string };
         const res = await fetch('/api/messages', {
           signal: controller.signal,
           method: 'POST',
@@ -180,7 +245,7 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
             'Content-Type': 'application/json',
             'x-api-key': settings.key,
             'anthropic-version': '2023-06-01',
-            ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+            ...bearerHeader,
           },
           body: JSON.stringify({ model, max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }),
         });
@@ -192,7 +257,29 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
         return data.content.filter(b => b.type === 'text').map(b => b.text).join('');
       }
 
-      // OpenAI / Mistral / Ollama — appel direct
+      if (currentProvider === 'ollama') {
+        // Via proxy backend /api/ollama/chat — never direct browser → Ollama
+        const res = await fetch('/api/ollama/chat', {
+          signal: controller.signal,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...bearerHeader },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.2,
+            host: settings.host || 'http://localhost:11434',
+          }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({})) as { error?: string; hint?: string };
+          const hint = e.hint ? `\n${e.hint}` : '';
+          throw new Error((e.error || `Erreur Ollama ${res.status}`) + hint);
+        }
+        const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+        return data.choices?.[0]?.message?.content || '';
+      }
+
+      // OpenAI / Mistral — appel direct depuis le navigateur (clé obligatoire)
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (provider.needsKey) headers['Authorization'] = `Bearer ${settings.key}`;
       const res = await fetch(settings.endpoint, {
@@ -312,11 +399,22 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
               <span className="w-2 h-2 rounded-full" style={{ background: currentProvider === id ? 'var(--accent)' : 'var(--border)' }} />
               {cfg.label}
               {cfg.offline && <span className="text-[0.65rem] font-bold px-1.5 rounded ml-1" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>offline</span>}
+              {id === 'ollama' && currentProvider === 'ollama' && (
+                <span className="w-1.5 h-1.5 rounded-full ml-1" style={{
+                  background: ollamaStatus === 'ok' ? 'var(--success)' : ollamaStatus === 'error' ? 'var(--danger)' : 'var(--warning)',
+                }} />
+              )}
             </button>
           ))}
         </div>
-        <ProviderFields provider={currentProvider} settings={providerSettings[currentProvider]}
-          onChange={s => setProviderSettings({ ...providerSettings, [currentProvider]: s })} />
+        <ProviderFields
+          provider={currentProvider}
+          settings={providerSettings[currentProvider]}
+          ollamaModels={ollamaModels}
+          ollamaStatus={ollamaStatus}
+          ollamaChecking={ollamaChecking}
+          onCheckOllama={checkOllama}
+          onChange={s => setProviderSettings(prev => ({ ...prev, [currentProvider]: s }))} />
       </div>
 
       {/* Source */}
@@ -416,8 +514,18 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
 }
 
 // ── ProviderFields ────────────────────────────────────────────────────────────
-function ProviderFields({ provider, settings, onChange }: { provider: ProviderKey; settings: ProviderSettings; onChange: (s: ProviderSettings) => void }) {
+function ProviderFields({ provider, settings, ollamaModels, ollamaStatus, ollamaChecking, onCheckOllama, onChange }: {
+  provider: ProviderKey;
+  settings: ProviderSettings;
+  ollamaModels: string[];
+  ollamaStatus: 'unknown' | 'ok' | 'error';
+  ollamaChecking: boolean;
+  onCheckOllama: () => void;
+  onChange: (s: ProviderSettings) => void;
+}) {
   const cfg = PROVIDERS[provider];
+  const isOllama = provider === 'ollama';
+  const modelList = isOllama && ollamaModels.length > 0 ? ollamaModels : cfg.models;
   return (
     <div className="space-y-3">
       {cfg.needsKey && (
@@ -432,28 +540,64 @@ function ProviderFields({ provider, settings, onChange }: { provider: ProviderKe
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Ollama: host + status */}
+      {isOllama && (
         <div>
-          <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Modèle</div>
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Hôte Ollama</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded" style={{
+                background: ollamaStatus === 'ok' ? 'var(--success-bg)' : ollamaStatus === 'error' ? 'var(--danger-bg)' : 'var(--bg-hover)',
+                color: ollamaStatus === 'ok' ? 'var(--success)' : ollamaStatus === 'error' ? 'var(--danger)' : 'var(--text-dim)',
+              }}>
+                {ollamaStatus === 'ok' ? '\u25cf en ligne' : ollamaStatus === 'error' ? '\u25cf hors ligne' : '\u25cf v\u00e9rification\u2026'}
+              </span>
+              <button className="flex items-center gap-1 px-2 py-0.5 rounded text-[0.65rem] font-semibold cursor-pointer"
+                style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }}
+                onClick={onCheckOllama} disabled={ollamaChecking}>
+                <RefreshCw size={10} />
+                Tester
+              </button>
+            </div>
+          </div>
+          <input type="text" value={settings.host ?? 'http://localhost:11434'}
+            onChange={e => onChange({ ...settings, host: e.target.value })}
+            placeholder="http://localhost:11434" />
+          {ollamaStatus === 'error' && (
+            <p className="text-[0.7rem] mt-1" style={{ color: 'var(--danger)' }}>
+              Ollama inaccessible \u2014 v\u00e9rifiez qu'il est d\u00e9marr\u00e9 (<code>ollama serve</code>).
+            </p>
+          )}
+        </div>
+      )}
+      <div className={`grid gap-3 ${!isOllama && cfg.endpointEditable ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div>
+          <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Mod\u00e8le</div>
           <select value={settings.model} onChange={e => onChange({ ...settings, model: e.target.value })}>
-            {cfg.models.map(m => <option key={m} value={m}>{m}</option>)}
-            <option value="__custom__">Autre (saisir)…</option>
+            {modelList.map(m => <option key={m} value={m}>{m}</option>)}
+            <option value="__custom__">Autre (saisir)\u2026</option>
           </select>
           {settings.model === '__custom__' && (
             <input type="text" className="mt-2" placeholder="ex : llama3.2:latest"
               value={settings.modelCustom || ''} onChange={e => onChange({ ...settings, modelCustom: e.target.value })} />
           )}
+          {isOllama && ollamaModels.length > 0 && (
+            <p className="text-[0.68rem] mt-1" style={{ color: 'var(--text-dim)' }}>
+              {ollamaModels.length} mod\u00e8le(s) install\u00e9(s) d\u00e9tect\u00e9(s)
+            </p>
+          )}
         </div>
-        {cfg.endpointEditable && (
+        {!isOllama && cfg.endpointEditable && (
           <div>
             <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Endpoint URL</div>
             <input type="text" value={settings.endpoint} onChange={e => onChange({ ...settings, endpoint: e.target.value })} />
           </div>
         )}
       </div>
-      {cfg.offline && (
+      {isOllama && (
         <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Ollama doit tourner localement — <a href="https://ollama.ai" target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>ollama.ai</a>{' '}puis <code>ollama serve</code>
+          Ollama doit tourner localement \u2014 <a href="https://ollama.ai" target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>ollama.ai</a>{' '}
+          puis <code>ollama serve</code>. Les requ\u00eates transitent par le proxy serveur.
         </div>
       )}
     </div>

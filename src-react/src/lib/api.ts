@@ -316,6 +316,125 @@ export const notificationsApi = {
 };
 
 // ══════════════════════════════════════════════════════
+
+// ═══════════════════════════════
+// LLM / Ollama
+// ════════════════════════════════════════════════════
+
+/**
+ * Shared LLM API for React pages.
+ * Ollama always goes via the backend proxy — never a direct browser call.
+ */
+export const llmApi = {
+  /** Check Ollama health via the backend proxy. */
+  checkOllamaHealth: async (host = 'http://localhost:11434'): Promise<{ ok: boolean; error?: string }> => {
+    const auth = getAuthState();
+    const headers: Record<string, string> = {};
+    if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`;
+    try {
+      const res = await fetch(`/api/ollama/health?host=${encodeURIComponent(host)}`, { headers });
+      return res.json() as Promise<{ ok: boolean; error?: string }>;
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  },
+
+  /** Fetch the list of installed Ollama models via the backend proxy. */
+  getOllamaModels: async (host = 'http://localhost:11434'): Promise<string[]> => {
+    const auth = getAuthState();
+    const headers: Record<string, string> = {};
+    if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`;
+    const res = await fetch(`/api/ollama/models?host=${encodeURIComponent(host)}`, { headers });
+    if (!res.ok) throw new Error(`Impossible de lister les modèles Ollama (HTTP ${res.status})`);
+    const data = await res.json() as { models: string[] };
+    return data.models ?? [];
+  },
+
+  /**
+   * Call an LLM using the provider settings in localStorage (testpilot_provider).
+   * Ollama is proxied through /api/ollama/chat; Anthropic through /api/messages.
+   * OpenAI and Mistral are called directly from the browser.
+   */
+  call: async (prompt: string, opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {}): Promise<string> => {
+    const stored = localStorage.getItem('testpilot_provider');
+    const all = stored ? JSON.parse(stored) as Record<string, { key?: string; model?: string; endpoint?: string; host?: string; modelCustom?: string }> : {};
+    const provider = (all._current as string | undefined) ?? 'anthropic';
+    const s = all[provider] ?? {};
+    const model = s.model === '__custom__' ? (s.modelCustom ?? '') : (s.model ?? '');
+    const auth = getAuthState();
+    const bearerHeader = auth.token ? { Authorization: `Bearer ${auth.token}` } : {} as Record<string, string>;
+    const temperature = opts.temperature ?? 0.2;
+    const maxTokens = opts.maxTokens ?? 2000;
+
+    if (!model) throw new Error(`Aucun modèle sélectionné pour le provider "${provider}".`);
+
+    if (provider === 'anthropic') {
+      if (!s.key) throw new Error('Clé API Anthropic manquante. Configurez-la dans la page Rédaction.');
+      const res = await fetch('/api/messages', {
+        signal: opts.signal,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': s.key, 'anthropic-version': '2023-06-01', ...bearerHeader },
+        body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as { error?: { message?: string } };
+        throw new Error(e.error?.message ?? `Erreur Anthropic ${res.status}`);
+      }
+      const data = await res.json() as { content: { type: string; text: string }[] };
+      return data.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    }
+
+    if (provider === 'ollama') {
+      const res = await fetch('/api/ollama/chat', {
+        signal: opts.signal,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...bearerHeader },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature,
+          host: s.host ?? 'http://localhost:11434',
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as { error?: string; hint?: string };
+        const hint = e.hint ? `\n${e.hint}` : '';
+        throw new Error((e.error ?? `Erreur Ollama ${res.status}`) + hint);
+      }
+      const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+      return data.choices?.[0]?.message?.content ?? '';
+    }
+
+    // OpenAI / Mistral — direct call from browser (API key required)
+    if (!s.key) throw new Error(`Clé API manquante pour le provider "${provider}". Configurez-la dans la page Rédaction.`);
+    const endpoint = s.endpoint ?? '';
+    const res = await fetch(endpoint, {
+      signal: opts.signal,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.key}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({})) as { error?: { message?: string } };
+      throw new Error(e.error?.message ?? `Erreur ${provider} ${res.status}`);
+    }
+    const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+    return data.choices?.[0]?.message?.content ?? '';
+  },
+
+  /** Returns the display label of the currently active provider. */
+  getActiveProviderLabel: (): string => {
+    const stored = localStorage.getItem('testpilot_provider');
+    const all = stored ? JSON.parse(stored) as Record<string, unknown> : {};
+    const p = (all._current as string | undefined) ?? 'anthropic';
+    const labels: Record<string, string> = {
+      anthropic: 'Anthropic Claude', openai: 'OpenAI', mistral: 'Mistral AI', ollama: 'Ollama (local)',
+    };
+    return labels[p] ?? p;
+  },
+};
+
+
 // Stores partagés
 // ══════════════════════════════════════════════════════
 export const projectStore = {

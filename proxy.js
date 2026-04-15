@@ -103,7 +103,8 @@ function requireCP(req, res, next) {
 }
 
 // Monté ici pour que req.currentUser soit disponible sur TOUTES les routes
-app.use(authMiddleware);
+// On passe par module.exports pour permettre jest.spyOn en tests
+app.use((req, res, next) => module.exports.authMiddleware(req, res, next));
 
 // ══════════════════════════════════════════════════════
 // ██  API PROJECTS
@@ -895,7 +896,7 @@ function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
  * GET /api/ollama/health?host=http://localhost:11434
  * Vérifie qu'Ollama répond. Retourne { ok: true } ou { ok: false, error: "..." }
  */
-app.get("/api/ollama/health", async (req, res) => {
+app.get("/api/ollama/health", requireAuth, async (req, res) => {
   let host;
   try {
     host = validateOllamaHost(req.query.host || "http://localhost:11434");
@@ -919,7 +920,7 @@ app.get("/api/ollama/health", async (req, res) => {
  * Retourne la liste des modèles installés sur Ollama.
  * Réponse : { models: ["llama3.2", "mistral:latest", ...] }
  */
-app.get("/api/ollama/models", async (req, res) => {
+app.get("/api/ollama/models", requireAuth, async (req, res) => {
   let host;
   try {
     host = validateOllamaHost(req.query.host || "http://localhost:11434");
@@ -944,7 +945,7 @@ app.get("/api/ollama/models", async (req, res) => {
  * Body attendu : { model, messages, host?, temperature? }
  * Retourne la réponse Ollama telle quelle (format /v1/chat/completions).
  */
-app.post("/api/ollama/chat", async (req, res) => {
+app.post("/api/ollama/chat", requireAuth, async (req, res) => {
   const { host, model, messages, temperature } = req.body;
 
   let ollamaHost;
@@ -1784,7 +1785,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, db, ollamaRequest };
+module.exports = { app, db, ollamaRequest, authMiddleware };
 
 // ── Graceful shutdown ────────────────────────────────
 function shutdown(signal) {

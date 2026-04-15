@@ -6,6 +6,10 @@
  * directement via jest.spyOn pour éviter tout conflit
  * avec les connexions TCP internes de Supertest.
  *
+ * L'authentification est contournée en mockant authMiddleware :
+ * chaque requête de test se voit attribuer un utilisateur fictif
+ * via req.currentUser, ce qui satisfait requireAuth sans toucher la DB.
+ *
  * Lance avec : npm test
  */
 
@@ -17,8 +21,26 @@ const request = require("supertest");
 const proxyModule = require("../proxy");
 const { app, db } = proxyModule;
 
+// ── Auth mock ─────────────────────────────────────────
+// Injecte un utilisateur fictif sur chaque requête de test
+// pour que requireAuth() passe sans accès réel à la base.
+// Réinstallé dans beforeEach car afterEach appelle restoreAllMocks.
+function installAuthMock() {
+  jest
+    .spyOn(proxyModule, "authMiddleware")
+    .mockImplementation((req, _res, next) => {
+      req.currentUser = { id: 999, username: "test", role: "admin" };
+      next();
+    });
+}
+
+beforeEach(() => {
+  installAuthMock();
+});
+
 // Fermer la DB après tous les tests
 afterAll(done => {
+  jest.restoreAllMocks();
   if (db && db.close) db.close(() => done());
   else done();
 });
