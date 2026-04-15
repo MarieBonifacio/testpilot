@@ -316,57 +316,64 @@ async function normalizeWithAI() {
         return;
     }
 
-    const apiKey = document.querySelector('input[type=password]')?.value || null;
-    showLoader(`Normalisation IA en cours pour ${needsAI.length} scénario(s)…`);
+    // Vérifier que TestPilotAPI.LLM est disponible (api-client.js chargé)
+    if (!TestPilotAPI?.LLM?.call) {
+        alert('Erreur : module LLM non disponible. Vérifiez que api-client.js est chargé.');
+        return;
+    }
+
+    const settings = TestPilotAPI.LLM.getSettings();
+    showLoader(`Normalisation IA en cours pour ${needsAI.length} scénario(s)… [${settings.cfg.label}]`);
+
+    let errors = 0;
 
     for (let i = 0; i < needsAI.length; i++) {
         const sc = needsAI[i];
-        updateLoaderText(`Normalisation IA : ${i+1}/${needsAI.length} — ${sc.title}`);
+        updateLoaderText(`Normalisation IA (${settings.cfg.label}) : ${i+1}/${needsAI.length} — ${sc.title}`);
 
         const prompt = `Tu es un expert QA. Convertis ce cas de test en format Gherkin Given/When/Then.
 Cas de test : "${sc.title}"
 ${sc.when_text !== sc.title ? 'Description : "' + sc.when_text + '"' : ''}
 Retourne un JSON strict : {"given":"...","when":"...","then":"..."}
-Contexte : application métier Carter-Cash (ERP retail auto-moto).
+Contexte : application métier (ERP retail).
 Réponse en français. Sois concis (1-2 phrases par étape).`;
 
         try {
-            const body = {
-                model: "claude-opus-4-5",
-                max_tokens: 300,
-                messages: [{ role: "user", content: prompt }]
-            };
-            const headers = { "Content-Type": "application/json", "anthropic-version": "2023-06-01" };
-            if (apiKey) headers["x-api-key"] = apiKey;
-
-            const resp = await fetch('/api/messages', { method: 'POST', headers, body: JSON.stringify(body) });
-            if (resp.ok) {
-                const data = await resp.json();
-                const text = data.content?.[0]?.text || '';
-                const match = text.match(/\{[\s\S]*"given"[\s\S]*"when"[\s\S]*"then"[\s\S]*\}/);
-                if (match) {
-                    const gwt = JSON.parse(match[0]);
-                    const idx = state.scenarios.findIndex(s => s.scenario_id === sc.scenario_id);
-                    if (idx !== -1) {
-                        state.scenarios[idx].given_text = gwt.given || sc.given_text;
-                        state.scenarios[idx].when_text  = gwt.when  || sc.when_text;
-                        state.scenarios[idx].then_text  = gwt.then  || sc.then_text;
-                        state.scenarios[idx].needs_ai   = false;
-                        // Mettre à jour le DOM directement
-                        const givenEl = document.getElementById(`given-${sc.scenario_id}`);
-                        const whenEl  = document.getElementById(`when-${sc.scenario_id}`);
-                        const thenEl  = document.getElementById(`then-${sc.scenario_id}`);
-                        if (givenEl) givenEl.value = state.scenarios[idx].given_text;
-                        if (whenEl)  whenEl.value  = state.scenarios[idx].when_text;
-                        if (thenEl)  thenEl.value  = state.scenarios[idx].then_text;
-                        // Retirer le style orange
-                        const card = document.getElementById(`card-${sc.scenario_id}`);
-                        if (card) { card.classList.remove('needs-ai'); card.querySelector('.needs-ai-label')?.remove(); }
-                    }
+            const text = await TestPilotAPI.LLM.call(prompt, { maxTokens: 300 });
+            const match = text.match(/\{[\s\S]*"given"[\s\S]*"when"[\s\S]*"then"[\s\S]*\}/);
+            if (match) {
+                const gwt = JSON.parse(match[0]);
+                const idx = state.scenarios.findIndex(s => s.scenario_id === sc.scenario_id);
+                if (idx !== -1) {
+                    state.scenarios[idx].given_text = gwt.given || sc.given_text;
+                    state.scenarios[idx].when_text  = gwt.when  || sc.when_text;
+                    state.scenarios[idx].then_text  = gwt.then  || sc.then_text;
+                    state.scenarios[idx].needs_ai   = false;
+                    // Mettre à jour le DOM directement
+                    const givenEl = document.getElementById(`given-${sc.scenario_id}`);
+                    const whenEl  = document.getElementById(`when-${sc.scenario_id}`);
+                    const thenEl  = document.getElementById(`then-${sc.scenario_id}`);
+                    if (givenEl) givenEl.value = state.scenarios[idx].given_text;
+                    if (whenEl)  whenEl.value  = state.scenarios[idx].when_text;
+                    if (thenEl)  thenEl.value  = state.scenarios[idx].then_text;
+                    // Retirer le style orange
+                    const card = document.getElementById(`card-${sc.scenario_id}`);
+                    if (card) { card.classList.remove('needs-ai'); card.querySelector('.needs-ai-label')?.remove(); }
                 }
             }
         } catch (e) {
+            errors++;
             console.warn('IA error for', sc.scenario_id, e.message);
+            // Arrêter si c'est une erreur de configuration (pas de clé, Ollama absent…)
+            if (e.message.includes('manquante') || e.message.includes('inaccessible') || e.message.includes('Ollama')) {
+                hideLoader();
+                const hint = e.message.includes('Ollama')
+                    ? '\n\nVérifiez qu\'Ollama est démarré (ollama serve) et qu\'un modèle est installé.'
+                    : '\n\nConfigurez votre clé API dans la page Rédaction.';
+                alert(`Erreur IA : ${e.message}${hint}`);
+                renderPreview();
+                return;
+            }
         }
 
         // Petite pause pour ne pas saturer l'API
@@ -374,6 +381,9 @@ Réponse en français. Sois concis (1-2 phrases par étape).`;
     }
 
     hideLoader();
+    if (errors > 0) {
+        alert(`Normalisation terminée avec ${errors} erreur(s). Les scénarios en erreur n'ont pas été modifiés.`);
+    }
     renderPreview(); // re-render pour actualiser les compteurs
 }
 

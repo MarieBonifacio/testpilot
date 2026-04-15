@@ -45,6 +45,17 @@ h1{color:var(--primary);font-size:1.6rem;font-weight:700}
 .field-label{font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:4px}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .offline-badge{background:#d4edda;color:#155724;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:20px}
+/* Badge statut Ollama dynamique */
+.ollama-badge{font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:20px;display:none}
+.ollama-badge.checking{display:inline;background:#e2e3e5;color:#383d41}
+.ollama-badge.online{display:inline;background:#d4edda;color:#155724}
+.ollama-badge.offline{display:inline;background:#f8d7da;color:#721c24}
+/* Champ hôte Ollama avec bouton tester */
+.ollama-host-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end}
+.ollama-status-msg{font-size:.8rem;padding:6px 10px;border-radius:5px;margin-top:6px;display:none}
+.ollama-status-msg.active{display:block}
+.ollama-status-msg.ok{background:#d4edda;color:#155724}
+.ollama-status-msg.error{background:#f8d7da;color:#721c24}
 input[type=text],input[type=password],select,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;font-size:.9rem;font-family:inherit;background:white;color:var(--text)}
 input[type=text]:focus,input[type=password]:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px rgba(59,109,17,.15)}
 
@@ -188,7 +199,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);text-
       <button class="provider-btn active" onclick="setProvider('anthropic',this)"><span class="pvdr-dot"></span>Anthropic Claude</button>
       <button class="provider-btn" onclick="setProvider('openai',this)"><span class="pvdr-dot"></span>OpenAI / Azure</button>
       <button class="provider-btn" onclick="setProvider('mistral',this)"><span class="pvdr-dot"></span>Mistral AI</button>
-      <button class="provider-btn" onclick="setProvider('ollama',this)"><span class="pvdr-dot"></span>Ollama <span class="offline-badge">offline</span></button>
+      <button class="provider-btn" onclick="setProvider('ollama',this)"><span class="pvdr-dot"></span>Ollama <span id="ollamaBadge" class="ollama-badge"></span></button>
     </div>
     <div class="provider-fields" id="providerFields"></div>
   </div>
@@ -316,8 +327,10 @@ const PROVIDERS = {
     models:['mistral-large-latest','mistral-small-latest','open-mistral-nemo'],
   },
   ollama: {
-    label:'Ollama (local)', needsKey:false, endpointEditable:true, offline:true,
-    endpoint:'http://localhost:11434/v1/chat/completions',
+    label:'Ollama (local)', needsKey:false, endpointEditable:false, offline:true,
+    // L'endpoint réel est /api/ollama/chat (proxy serveur) — configuré dans api-client.js.
+    // La valeur ci-dessous est l'hôte Ollama par défaut, stocké séparément dans providerSettings.ollama.host.
+    endpoint:'/api/ollama/chat',
     keyPlaceholder:'',
     models:['llama3.2','mistral','qwen2.5-coder','phi4','deepseek-r1'],
   },
@@ -330,6 +343,14 @@ function loadProviderSettings() {
   try { providerSettings = JSON.parse(localStorage.getItem(PK)) || {}; } catch { providerSettings = {}; }
   for (const [id, cfg] of Object.entries(PROVIDERS)) {
     if (!providerSettings[id]) providerSettings[id] = { key:'', model:cfg.models[0], endpoint:cfg.endpoint };
+    // S'assurer que le champ host existe pour Ollama
+    if (id === 'ollama' && !providerSettings[id].host) {
+      providerSettings[id].host = 'http://localhost:11434';
+    }
+  }
+  // Restaurer le provider actif depuis localStorage
+  if (providerSettings._current && PROVIDERS[providerSettings._current]) {
+    currentProvider = providerSettings._current;
   }
 }
 
@@ -337,9 +358,13 @@ function saveProviderSettings() { localStorage.setItem(PK, JSON.stringify(provid
 
 function setProvider(id, btn) {
   currentProvider = id;
+  providerSettings._current = id;
+  saveProviderSettings();
   document.querySelectorAll('.provider-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderProviderFields();
+  // Vérifier la santé d'Ollama dès qu'on le sélectionne
+  if (id === 'ollama') checkOllamaStatus();
 }
 
 function renderProviderFields() {
@@ -347,6 +372,48 @@ function renderProviderFields() {
   const s   = providerSettings[currentProvider] || {};
   const fld = document.getElementById('providerFields');
   if (!fld) return;
+
+  // ── Cas spécial : Ollama ───────────────────────────
+  if (currentProvider === 'ollama') {
+    const host = s.host || 'http://localhost:11434';
+    const savedModel = s.model || '';
+    fld.innerHTML = `
+      <div style="font-size:.85rem;color:var(--success);padding:4px 0 8px">
+        ✓ Aucune clé requise — 100% local
+      </div>
+      <div>
+        <div class="field-label">Hôte Ollama</div>
+        <div class="ollama-host-row">
+          <input type="text" id="ollamaHostInput" value="${host}"
+                 placeholder="http://localhost:11434"
+                 oninput="providerSettings.ollama.host=this.value;saveProviderSettings()">
+          <button class="btn-sm btn-secondary" onclick="checkOllamaStatus()">Tester</button>
+          <button class="btn-sm btn-secondary" onclick="refreshOllamaModels()" title="Actualiser la liste des modèles">↻</button>
+        </div>
+        <div id="ollamaStatusMsg" class="ollama-status-msg"></div>
+      </div>
+      <div style="margin-top:10px">
+        <div class="field-label">Modèle</div>
+        <select id="ollamaModelSelect" onchange="onOllamaModelChange(this)">
+          <option value="">— Cliquez sur ↻ pour détecter les modèles —</option>
+        </select>
+        <input type="text" id="pvdrModelCustom" placeholder="ex : llama3.2:latest"
+               style="display:none;margin-top:6px"
+               value="${s.model==='__custom__'?(s.modelCustom||''):''}"
+               oninput="providerSettings.ollama.modelCustom=this.value;saveProviderSettings()">
+      </div>
+      <div style="font-size:.78rem;color:var(--text-muted);margin-top:8px">
+        Ollama doit tourner localement —
+        <a href="https://ollama.com" target="_blank" style="color:var(--primary)">ollama.com</a>
+        puis <code style="background:var(--bg-alt);padding:1px 4px;border-radius:3px">ollama serve</code>
+      </div>`;
+
+    // Charger les modèles immédiatement (silencieux si Ollama est absent)
+    refreshOllamaModels(true);
+    return;
+  }
+
+  // ── Autres providers (Anthropic, OpenAI, Mistral) ──
   const opts = cfg.models.map(m =>
     `<option value="${m}" ${(s.model||cfg.models[0])===m?'selected':''}>${m}</option>`
   ).join('') + '<option value="__custom__">Autre (saisir)…</option>';
@@ -356,7 +423,7 @@ function renderProviderFields() {
       <div class="field-label">Clé API</div>
       <input type="password" placeholder="${cfg.keyPlaceholder}" value="${s.key||''}"
              oninput="providerSettings[currentProvider].key=this.value;saveProviderSettings()">
-    </div>` : `<div style="font-size:.85rem;color:var(--success);padding:4px 0">✓ Aucune clé requise — ${cfg.offline?'100% local':'mode local'}</div>`}
+    </div>` : `<div style="font-size:.85rem;color:var(--success);padding:4px 0">✓ Aucune clé requise</div>`}
     <div class="field-row">
       <div>
         <div class="field-label">Modèle</div>
@@ -371,11 +438,7 @@ function renderProviderFields() {
         <input type="text" value="${s.endpoint||cfg.endpoint}"
                oninput="providerSettings[currentProvider].endpoint=this.value;saveProviderSettings()">
       </div>` : '<div></div>'}
-    </div>
-    ${cfg.offline ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:2px">
-      Ollama doit tourner localement — <a href="https://ollama.ai" target="_blank" style="color:var(--primary)">ollama.ai</a>
-      puis <code style="background:var(--bg-alt);padding:1px 4px;border-radius:3px">ollama serve</code>
-    </div>` : ''}`;
+    </div>`;
 }
 
 function onModelChange(sel) {
@@ -385,9 +448,115 @@ function onModelChange(sel) {
   saveProviderSettings();
 }
 
+// Changement de modèle spécifique Ollama (select dynamique)
+function onOllamaModelChange(sel) {
+  if (sel.value === '__custom__') {
+    providerSettings.ollama.model = '__custom__';
+    const c = document.getElementById('pvdrModelCustom');
+    if (c) c.style.display = 'block';
+  } else {
+    providerSettings.ollama.model = sel.value;
+    const c = document.getElementById('pvdrModelCustom');
+    if (c) c.style.display = 'none';
+  }
+  saveProviderSettings();
+}
+
 function getActiveModel() {
   const s = providerSettings[currentProvider];
-  return s.model === '__custom__' ? (s.modelCustom||'') : (s.model||PROVIDERS[currentProvider].models[0]);
+  if (!s) return '';
+  return s.model === '__custom__' ? (s.modelCustom || '') : (s.model || PROVIDERS[currentProvider].models[0]);
+}
+
+// ── Ollama : health check et détection des modèles ───
+async function checkOllamaStatus() {
+  const badge  = document.getElementById('ollamaBadge');
+  const msgEl  = document.getElementById('ollamaStatusMsg');
+  const host   = providerSettings.ollama?.host || 'http://localhost:11434';
+
+  if (badge) { badge.className = 'ollama-badge checking'; badge.textContent = '…'; }
+  if (msgEl) { msgEl.className = 'ollama-status-msg'; msgEl.textContent = ''; }
+
+  const result = await TestPilotAPI.LLM.checkOllamaHealth(host);
+
+  if (result.ok) {
+    if (badge) { badge.className = 'ollama-badge online'; badge.textContent = 'en ligne'; }
+    if (msgEl) { msgEl.className = 'ollama-status-msg ok active'; msgEl.textContent = `✓ Ollama accessible sur ${host}`; }
+  } else {
+    if (badge) { badge.className = 'ollama-badge offline'; badge.textContent = 'hors ligne'; }
+    if (msgEl) {
+      msgEl.className = 'ollama-status-msg error active';
+      msgEl.innerHTML = `✗ Ollama inaccessible sur ${host}<br>
+        <small>Vérifiez qu'Ollama est démarré :
+        <code style="background:rgba(0,0,0,.07);padding:1px 4px;border-radius:3px">ollama serve</code><br>
+        Pour installer Ollama : <a href="https://ollama.com" target="_blank">ollama.com</a></small>`;
+    }
+  }
+  return result.ok;
+}
+
+async function refreshOllamaModels(silent = false) {
+  const host    = providerSettings.ollama?.host || 'http://localhost:11434';
+  const select  = document.getElementById('ollamaModelSelect');
+  const badge   = document.getElementById('ollamaBadge');
+  const msgEl   = document.getElementById('ollamaStatusMsg');
+  if (!select) return;
+
+  if (!silent) {
+    select.innerHTML = '<option value="">Détection en cours…</option>';
+    select.disabled = true;
+    if (badge) { badge.className = 'ollama-badge checking'; badge.textContent = '…'; }
+  }
+
+  try {
+    const models = await TestPilotAPI.LLM.getOllamaModels(host);
+    if (models.length === 0) {
+      select.innerHTML = '<option value="">Aucun modèle installé</option>'
+        + '<option value="__custom__">Saisir manuellement…</option>';
+      select.disabled = false;
+      if (!silent) {
+        if (badge) { badge.className = 'ollama-badge online'; badge.textContent = 'en ligne'; }
+        if (msgEl) {
+          msgEl.className = 'ollama-status-msg error active';
+          msgEl.innerHTML = `Ollama est démarré mais aucun modèle n'est installé.<br>
+            <small>Installez un modèle :
+            <code style="background:rgba(0,0,0,.07);padding:1px 4px;border-radius:3px">ollama pull llama3.2</code></small>`;
+        }
+      }
+      return;
+    }
+
+    const saved = providerSettings.ollama?.model;
+    const opts  = models.map(m =>
+      `<option value="${m}" ${m === saved ? 'selected' : ''}>${m}</option>`
+    ).join('') + '<option value="__custom__">Saisir manuellement…</option>';
+    select.innerHTML = opts;
+    select.disabled  = false;
+
+    // Sauvegarder le modèle sélectionné si aucun n'était mémorisé
+    if (!saved || !models.includes(saved)) {
+      providerSettings.ollama.model = models[0];
+      saveProviderSettings();
+    }
+
+    if (badge) { badge.className = 'ollama-badge online'; badge.textContent = `${models.length} modèle${models.length > 1 ? 's' : ''}`; }
+    if (!silent && msgEl) {
+      msgEl.className = 'ollama-status-msg ok active';
+      msgEl.textContent = `✓ ${models.length} modèle${models.length > 1 ? 's' : ''} disponible${models.length > 1 ? 's' : ''}`;
+    }
+  } catch (err) {
+    select.innerHTML = '<option value="">Ollama inaccessible</option>'
+      + '<option value="__custom__">Saisir manuellement…</option>';
+    select.disabled = false;
+    if (badge) { badge.className = 'ollama-badge offline'; badge.textContent = 'hors ligne'; }
+    if (!silent && msgEl) {
+      msgEl.className = 'ollama-status-msg error active';
+      msgEl.innerHTML = `✗ ${err.message}<br>
+        <small>Vérifiez qu'Ollama est démarré :
+        <code style="background:rgba(0,0,0,.07);padding:1px 4px;border-radius:3px">ollama serve</code><br>
+        Pour installer Ollama : <a href="https://ollama.com" target="_blank">ollama.com</a></small>`;
+    }
+  }
 }
 
 // ── Contexte projet ───────────────────────────────────
@@ -503,37 +672,10 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
 }
 
 // ── LLM call ──────────────────────────────────────────
+// Délègue à TestPilotAPI.LLM.call() qui gère tous les providers,
+// y compris Ollama via le proxy serveur (plus de CORS, architecture cohérente).
 async function callLLM(prompt) {
-  const provider = PROVIDERS[currentProvider];
-  const s        = providerSettings[currentProvider];
-  const model    = getActiveModel();
-  const endpoint = s.endpoint || provider.endpoint;
-
-  if (provider.needsKey && !s.key) throw new Error(`Clé API ${provider.label} manquante.`);
-  if (!model) throw new Error('Aucun modèle sélectionné.');
-
-  if (currentProvider === 'anthropic') {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'x-api-key':s.key, 'anthropic-version':'2023-06-01' },
-      body: JSON.stringify({ model, max_tokens:2000, messages:[{ role:'user', content:prompt }] }),
-    });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message||`Erreur Anthropic ${res.status}`); }
-    const data = await res.json();
-    return data.content.filter(b=>b.type==='text').map(b=>b.text).join('');
-  }
-
-  // OpenAI / Mistral / Ollama
-  const headers = { 'Content-Type':'application/json' };
-  if (provider.needsKey) headers['Authorization'] = `Bearer ${s.key}`;
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model, messages:[{ role:'user', content:prompt }], temperature:0.2 }),
-  });
-  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message||`Erreur ${provider.label} ${res.status}`); }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+  return TestPilotAPI.LLM.call(prompt, { maxTokens: 2000, temperature: 0.2 });
 }
 
 // ── Generate ──────────────────────────────────────────
@@ -850,7 +992,18 @@ async function onProjectChange(projectId) {
 
 // ── Init ──────────────────────────────────────────────
 loadProviderSettings();
+
+// Restaurer le bouton actif dans le sélecteur de provider
+document.querySelectorAll('.provider-btn').forEach(btn => {
+  const id = btn.getAttribute('onclick')?.match(/setProvider\('(\w+)'/)?.[1];
+  if (id === currentProvider) btn.classList.add('active');
+  else btn.classList.remove('active');
+});
+
 renderProviderFields();
+
+// Si Ollama était le dernier provider utilisé, vérifier sa santé au chargement
+if (currentProvider === 'ollama') checkOllamaStatus();
 
 // Initialize project selector
 TestPilotAPI.renderProjectSelector('projectSelectorContainer', onProjectChange).then(() => {

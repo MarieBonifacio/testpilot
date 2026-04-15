@@ -171,6 +171,200 @@ const TestPilotAPI = (function() {
   };
 
   // ══════════════════════════════════════════════════════
+  // ██  MODULE LLM PARTAGÉ
+  // ══════════════════════════════════════════════════════
+
+  /**
+   * Clé localStorage utilisée par les pages pour stocker les settings provider.
+   * Doit rester synchronisée avec la constante PK de index.html.
+   */
+  const LLM_PROVIDER_KEY = "testpilot_provider";
+
+  /**
+   * Configuration statique des providers (modèles par défaut, endpoints, etc.)
+   * Miroir de l'objet PROVIDERS dans index.html — source de vérité partagée.
+   */
+  const LLM_PROVIDERS = {
+    anthropic: {
+      label: "Anthropic Claude",
+      needsKey: true,
+      defaultEndpoint: "/api/messages",  // passe par le proxy serveur
+      defaultModel: "claude-sonnet-4-20250514"
+    },
+    openai: {
+      label: "OpenAI / Azure",
+      needsKey: true,
+      defaultEndpoint: "https://api.openai.com/v1/chat/completions",
+      defaultModel: "gpt-4o"
+    },
+    mistral: {
+      label: "Mistral AI",
+      needsKey: true,
+      defaultEndpoint: "https://api.mistral.ai/v1/chat/completions",
+      defaultModel: "mistral-large-latest"
+    },
+    ollama: {
+      label: "Ollama (local)",
+      needsKey: false,
+      defaultEndpoint: "/api/ollama/chat",  // passe par le proxy serveur
+      defaultHost: "http://localhost:11434",
+      defaultModel: "llama3.2"
+    }
+  };
+
+  /**
+   * Lit les settings provider depuis localStorage.
+   * @returns {{ provider: string, settings: object }}
+   */
+  function _getLLMSettings() {
+    let allSettings = {};
+    try { allSettings = JSON.parse(localStorage.getItem(LLM_PROVIDER_KEY)) || {}; } catch { /* */ }
+
+    // Détecter le provider actif (le dernier sélectionné par l'utilisateur)
+    // On cherche une clé "current" si elle existe, sinon on fallback sur "anthropic"
+    const provider = allSettings._current || "anthropic";
+    const cfg      = LLM_PROVIDERS[provider] || LLM_PROVIDERS.anthropic;
+    const s        = allSettings[provider]   || {};
+
+    return {
+      provider,
+      cfg,
+      key:      s.key       || "",
+      model:    s.model === "__custom__" ? (s.modelCustom || "") : (s.model || cfg.defaultModel),
+      endpoint: s.endpoint  || cfg.defaultEndpoint,
+      host:     s.host      || cfg.defaultHost || null
+    };
+  }
+
+  /**
+   * Effectue un appel LLM avec le provider actuellement sélectionné.
+   * Utilise les settings stockés dans localStorage (même clé que index.html).
+   *
+   * @param {string} prompt  - Le prompt utilisateur
+   * @param {object} [opts]  - Options optionnelles : { maxTokens, temperature }
+   * @returns {Promise<string>} - Le texte brut de la réponse
+   * @throws {Error} avec message explicite selon le provider en échec
+   */
+  async function callLLM(prompt, opts = {}) {
+    const { provider, cfg, key, model, endpoint, host } = _getLLMSettings();
+    const maxTokens  = opts.maxTokens  || 2000;
+    const temperature = opts.temperature !== undefined ? opts.temperature : 0.2;
+
+    if (cfg.needsKey && !key) {
+      throw new Error(`Clé API ${cfg.label} manquante. Configurez-la dans la page Rédaction.`);
+    }
+    if (!model) {
+      throw new Error(`Aucun modèle sélectionné pour ${cfg.label}.`);
+    }
+
+    // ── Anthropic ─────────────────────────────────────
+    if (provider === "anthropic") {
+      const headers = {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01"
+      };
+      if (key) headers["x-api-key"] = key;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          max_tokens: maxTokens,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error?.message || `Erreur Anthropic ${res.status}`);
+      }
+      const data = await res.json();
+      return data.content.filter(b => b.type === "text").map(b => b.text).join("");
+    }
+
+    // ── Ollama (via proxy serveur /api/ollama/chat) ────
+    if (provider === "ollama") {
+      const res = await fetch("/api/ollama/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature,
+          host: host || "http://localhost:11434"
+        })
+      });
+
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        const hint = e.hint ? `\n${e.hint}` : "";
+        throw new Error((e.error || `Erreur Ollama ${res.status}`) + hint);
+      }
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || "";
+    }
+
+    // ── OpenAI / Mistral (appel direct depuis le navigateur) ──
+    const headers = { "Content-Type": "application/json" };
+    if (key) headers["Authorization"] = `Bearer ${key}`;
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: prompt }],
+        temperature
+      })
+    });
+
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error?.message || `Erreur ${cfg.label} ${res.status}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
+  }
+
+  /**
+   * Vérifie la santé d'Ollama via le proxy serveur.
+   * @param {string} [host] - ex: "http://localhost:11434"
+   * @returns {Promise<{ ok: boolean, error?: string }>}
+   */
+  async function checkOllamaHealth(host) {
+    const h = host || "http://localhost:11434";
+    try {
+      const res = await fetch(`/api/ollama/health?host=${encodeURIComponent(h)}`);
+      return await res.json();
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  /**
+   * Récupère la liste des modèles Ollama disponibles via le proxy serveur.
+   * @param {string} [host]
+   * @returns {Promise<string[]>}
+   */
+  async function getOllamaModels(host) {
+    const h = host || "http://localhost:11434";
+    const res = await fetch(`/api/ollama/models?host=${encodeURIComponent(h)}`);
+    if (!res.ok) throw new Error(`Impossible de lister les modèles Ollama (HTTP ${res.status})`);
+    const data = await res.json();
+    return data.models || [];
+  }
+
+  const LLM = {
+    call:             callLLM,
+    checkOllamaHealth,
+    getOllamaModels,
+    getSettings:      _getLLMSettings,
+    PROVIDERS:        LLM_PROVIDERS,
+    PROVIDER_KEY:     LLM_PROVIDER_KEY
+  };
+
+  // ══════════════════════════════════════════════════════
   // ██  UI COMPONENTS
   // ══════════════════════════════════════════════════════
 
@@ -513,6 +707,7 @@ const TestPilotAPI = (function() {
     Import,
     ClickUp,
     Reports,
+    LLM,
 
     // UI components
     renderProjectSelector,

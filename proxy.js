@@ -7,6 +7,10 @@
  * Fonctionnalités :
  *   - API REST pour projets, scénarios, sessions de tests
  *   - Proxy vers les APIs LLM (Anthropic, OpenAI, Mistral)
+ *   - Proxy local vers Ollama (HTTP, sans dépendance externe)
+ *       GET  /api/ollama/health  — santé du serveur Ollama
+ *       GET  /api/ollama/models  — liste des modèles installés
+ *       POST /api/ollama/chat    — génération (format OpenAI-compatible)
  *   - Serveur de fichiers statiques
  */
 
@@ -788,6 +792,134 @@ app.get("/api/projects/:id/campaigns/kpis", (req, res) => {
 });
 
 
+
+// ══════════════════════════════════════════════════════
+// ██  API OLLAMA (proxy local HTTP)
+// ══════════════════════════════════════════════════════
+
+/**
+ * Helper : effectue une requête HTTP (non HTTPS) vers un serveur Ollama local.
+ * Ollama tourne en HTTP simple — on ne peut pas utiliser le module `https`.
+ * @param {string} method    - GET | POST
+ * @param {string} host      - ex : "http://localhost:11434"
+ * @param {string} urlPath   - ex : "/api/tags"
+ * @param {object|null} body
+ * @param {number} timeoutMs
+ */
+function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const http  = require("http");
+    const urlObj = new URL(host.replace(/\/$/, "") + urlPath);
+    const bodyStr = body ? JSON.stringify(body) : null;
+
+    const options = {
+      hostname: urlObj.hostname,
+      port:     urlObj.port || 11434,
+      path:     urlPath,
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(bodyStr ? { "Content-Length": Buffer.byteLength(bodyStr) } : {})
+      }
+    };
+
+    const req = http.request(options, (res) => {
+      let data = "";
+      res.on("data", chunk => data += chunk);
+      res.on("end", () => {
+        try {
+          resolve({ status: res.statusCode, body: JSON.parse(data) });
+        } catch (e) {
+          resolve({ status: res.statusCode, body: data });
+        }
+      });
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`Timeout après ${timeoutMs}ms — Ollama inaccessible sur ${host}`));
+    });
+
+    req.on("error", (err) => {
+      reject(new Error(`Impossible de joindre Ollama sur ${host} : ${err.message}`));
+    });
+
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+/**
+ * GET /api/ollama/health?host=http://localhost:11434
+ * Vérifie qu'Ollama répond. Retourne { ok: true } ou { ok: false, error: "..." }
+ */
+app.get("/api/ollama/health", async (req, res) => {
+  const host = req.query.host || "http://localhost:11434";
+  try {
+    const { status } = await ollamaRequest("GET", host, "/api/version", null, 5000);
+    if (status === 200) {
+      res.json({ ok: true });
+    } else {
+      res.status(502).json({ ok: false, error: `Ollama a répondu HTTP ${status}` });
+    }
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/ollama/models?host=http://localhost:11434
+ * Retourne la liste des modèles installés sur Ollama.
+ * Réponse : { models: ["llama3.2", "mistral:latest", ...] }
+ */
+app.get("/api/ollama/models", async (req, res) => {
+  const host = req.query.host || "http://localhost:11434";
+  try {
+    const { status, body } = await ollamaRequest("GET", host, "/api/tags", null, 5000);
+    if (status !== 200) {
+      return res.status(502).json({ error: `Ollama HTTP ${status}` });
+    }
+    const models = (body.models || []).map(m => m.name);
+    res.json({ models });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/ollama/chat
+ * Proxy les requêtes de génération vers Ollama (format OpenAI-compatible).
+ * Body attendu : { model, messages, host?, temperature? }
+ * Retourne la réponse Ollama telle quelle (format /v1/chat/completions).
+ */
+app.post("/api/ollama/chat", async (req, res) => {
+  const { host, model, messages, temperature } = req.body;
+  const ollamaHost = host || "http://localhost:11434";
+
+  if (!model)    return res.status(400).json({ error: "Le champ 'model' est requis" });
+  if (!messages) return res.status(400).json({ error: "Le champ 'messages' est requis" });
+
+  const payload = {
+    model,
+    messages,
+    temperature: temperature !== undefined ? temperature : 0.2,
+    stream: false
+  };
+
+  try {
+    const { status, body } = await ollamaRequest("POST", ollamaHost, "/v1/chat/completions", payload, 120000);
+    if (status !== 200) {
+      const errMsg = typeof body === "object" ? (body.error || JSON.stringify(body)) : body;
+      return res.status(502).json({ error: `Ollama ${status} : ${errMsg}` });
+    }
+    res.json(body);
+  } catch (err) {
+    res.status(502).json({
+      error: err.message,
+      hint: "Vérifiez qu'Ollama est démarré (`ollama serve`) et que le modèle est installé (`ollama pull <modèle>`)."
+    });
+  }
+});
 
 // POST /api/messages - Proxy Anthropic
 app.post("/api/messages", (req, res) => {

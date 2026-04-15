@@ -97,6 +97,48 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 PORT=3000
 ```
 
+> La clé Anthropic est optionnelle si vous utilisez un autre provider (Ollama, OpenAI, Mistral).
+
+### Utiliser Ollama (100% local, sans clé API)
+
+Ollama permet de faire tourner des modèles IA directement sur votre machine, sans envoyer de données à un service cloud.
+
+**1. Installer Ollama**
+
+Téléchargez et installez depuis [ollama.com](https://ollama.com) (Windows, macOS, Linux).
+
+**2. Démarrer le serveur Ollama**
+
+```bash
+ollama serve
+```
+
+> Sur Windows/macOS, Ollama démarre automatiquement en tâche de fond après l'installation.
+
+**3. Télécharger un modèle**
+
+```bash
+# Modèle recommandé pour débuter (~4 Go)
+ollama pull mistral
+
+# Autres modèles supportés
+ollama pull llama3.2
+ollama pull qwen2.5-coder
+ollama pull phi4
+ollama pull deepseek-r1
+```
+
+**4. Configurer dans TestPilot**
+
+Dans la page **Rédaction**, sélectionnez le provider **Ollama** :
+- Le champ **Hôte** est pré-rempli à `http://localhost:11434`
+- Cliquez sur **↻** pour détecter automatiquement les modèles installés
+- Cliquez sur **Tester** pour vérifier la connexion
+
+Le badge du bouton Ollama affiche l'état en temps réel :
+- **`en ligne`** (vert) — Ollama est joignable, nombre de modèles disponibles
+- **`hors ligne`** (rouge) — Ollama n'est pas démarré
+
 ### Compte admin initial
 
 Au premier démarrage, créer un compte via `POST /api/auth/register` (libre si la base est vide).
@@ -213,6 +255,18 @@ Pour bypasser ponctuellement : `git commit --no-verify`
 
 ### Import
 - `POST /api/projects/:id/import` — Importer scénarios depuis Excel/JSON
+
+### Proxy LLM
+
+- `POST /api/messages` — Proxy Anthropic Claude (transmet la clé API côté serveur)
+
+### Ollama (proxy local)
+
+- `GET  /api/ollama/health?host=<url>` — Vérifie si Ollama est joignable (`{ ok: true/false }`)
+- `GET  /api/ollama/models?host=<url>` — Liste les modèles installés (`{ models: [...] }`)
+- `POST /api/ollama/chat` — Proxy les requêtes de génération vers Ollama (format OpenAI-compatible)
+
+> Le paramètre `host` est optionnel, valeur par défaut : `http://localhost:11434`.
 
 ### ClickUp
 - `GET  /api/projects/:id/clickup/config` — Configuration ClickUp
