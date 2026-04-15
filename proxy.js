@@ -1232,6 +1232,229 @@ app.post("/api/clickup/create-batch", requireAuth, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════
+// ██  API PRODUCTION BUGS (P4.1 — Taux de fuite)
+// ══════════════════════════════════════════════════════
+
+/**
+ * GET /api/projects/:id/production-bugs
+ * Query: ?page=1&limit=20&severity=critical&has_scenario=true|false
+ */
+app.get("/api/projects/:id/production-bugs", requireAuth, (req, res) => {
+  const projectId = req.params.id;
+  const page      = Math.max(1, parseInt(req.query.page)  || 1);
+  const limit     = Math.min(100, parseInt(req.query.limit) || 20);
+  const offset    = (page - 1) * limit;
+
+  let where  = "b.project_id = ?";
+  const params = [projectId];
+
+  if (req.query.severity) {
+    where += " AND b.severity = ?";
+    params.push(req.query.severity);
+  }
+  if (req.query.has_scenario === "true") {
+    where += " AND b.scenario_id IS NOT NULL";
+  } else if (req.query.has_scenario === "false") {
+    where += " AND b.scenario_id IS NULL";
+  }
+  if (req.query.feature) {
+    where += " AND b.feature = ?";
+    params.push(req.query.feature);
+  }
+
+  const countSql = `SELECT COUNT(*) AS total FROM production_bugs b WHERE ${where}`;
+  const dataSql  = `
+    SELECT b.*,
+           s.title AS scenario_title,
+           s.scenario_id AS scenario_ref
+    FROM production_bugs b
+    LEFT JOIN scenarios s ON s.id = b.scenario_id
+    WHERE ${where}
+    ORDER BY b.detected_date DESC, b.created_at DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  db.get(countSql, params, (err, countRow) => {
+    if (err) return res.status(500).json({ error: err.message });
+    db.all(dataSql, [...params, limit, offset], (err2, rows) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      res.json({
+        bugs:  rows,
+        total: countRow.total,
+        page,
+        limit,
+        pages: Math.ceil(countRow.total / limit)
+      });
+    });
+  });
+});
+
+/**
+ * POST /api/projects/:id/production-bugs
+ * Body: { title, description?, severity?, scenario_id?, detected_date, feature?, external_id?, root_cause? }
+ */
+app.post("/api/projects/:id/production-bugs", requireAuth, (req, res) => {
+  const projectId = req.params.id;
+  const { title, description, severity, scenario_id, detected_date, feature, external_id, root_cause } = req.body;
+  if (!title)          return res.status(400).json({ error: "title est requis" });
+  if (!detected_date)  return res.status(400).json({ error: "detected_date est requis" });
+
+  db.run(`
+    INSERT INTO production_bugs
+      (project_id, external_id, title, description, severity, scenario_id, detected_date, feature, root_cause)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    projectId,
+    external_id  || null,
+    title,
+    description  || null,
+    severity     || "major",
+    scenario_id  || null,
+    detected_date,
+    feature      || null,
+    root_cause   || null
+  ], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.status(201).json({ id: this.lastID });
+  });
+});
+
+/**
+ * PUT /api/production-bugs/:id
+ */
+app.put("/api/production-bugs/:id", requireAuth, (req, res) => {
+  const { title, description, severity, scenario_id, detected_date, feature, external_id, root_cause } = req.body;
+  db.run(`
+    UPDATE production_bugs SET
+      title         = COALESCE(?, title),
+      description   = ?,
+      severity      = COALESCE(?, severity),
+      scenario_id   = ?,
+      detected_date = COALESCE(?, detected_date),
+      feature       = ?,
+      external_id   = ?,
+      root_cause    = ?
+    WHERE id = ?
+  `, [
+    title        || null,
+    description  !== undefined ? description  : null,
+    severity     || null,
+    scenario_id  !== undefined ? scenario_id  : null,
+    detected_date || null,
+    feature      !== undefined ? feature      : null,
+    external_id  !== undefined ? external_id  : null,
+    root_cause   !== undefined ? root_cause   : null,
+    req.params.id
+  ], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: "Bug non trouvé" });
+    res.json({ updated: true });
+  });
+});
+
+/**
+ * DELETE /api/production-bugs/:id
+ */
+app.delete("/api/production-bugs/:id", requireAuth, (req, res) => {
+  db.run("DELETE FROM production_bugs WHERE id = ?", [req.params.id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: "Bug non trouvé" });
+    res.json({ deleted: true });
+  });
+});
+
+/**
+ * GET /api/projects/:id/kpis/leak-rate
+ * Retourne le taux de fuite avec détails (by_severity, by_feature, trend_30d)
+ */
+app.get("/api/projects/:id/kpis/leak-rate", requireAuth, (req, res) => {
+  const projectId = req.params.id;
+
+  const q = (sql, params) => new Promise((resolve, reject) =>
+    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows))
+  );
+
+  Promise.all([
+    q(`SELECT b.*, s.title AS scenario_title
+       FROM production_bugs b
+       LEFT JOIN scenarios s ON s.id = b.scenario_id
+       WHERE b.project_id = ?
+       ORDER BY b.detected_date DESC`, [projectId]),
+    // Trend 30 jours : nombre de bugs par jour (tous et avec scénario lié)
+    q(`SELECT
+         date(detected_date) AS day,
+         COUNT(*) AS total,
+         SUM(CASE WHEN scenario_id IS NOT NULL THEN 1 ELSE 0 END) AS leaked
+       FROM production_bugs
+       WHERE project_id = ?
+         AND detected_date >= date('now', '-29 days')
+       GROUP BY date(detected_date)
+       ORDER BY day ASC`, [projectId])
+  ]).then(([bugs, dailyData]) => {
+    const total             = bugs.length;
+    const bugs_with_scenario    = bugs.filter(b => b.scenario_id !== null).length;
+    const bugs_without_scenario = total - bugs_with_scenario;
+    const leak_rate_percent = total > 0
+      ? Math.round(bugs_with_scenario / total * 1000) / 10
+      : 0;
+
+    // Par sévérité
+    const severities = ["critical", "major", "minor", "trivial"];
+    const by_severity = {};
+    severities.forEach(sev => {
+      const subset = bugs.filter(b => b.severity === sev);
+      by_severity[sev] = {
+        total:  subset.length,
+        leaked: subset.filter(b => b.scenario_id !== null).length
+      };
+    });
+
+    // Par feature
+    const by_feature = {};
+    bugs.forEach(b => {
+      const f = b.feature || "Sans feature";
+      if (!by_feature[f]) by_feature[f] = { total: 0, leaked: 0 };
+      by_feature[f].total++;
+      if (b.scenario_id !== null) by_feature[f].leaked++;
+    });
+
+    // Trend 30 jours — tableau de 30 valeurs (taux quotidien en %)
+    // On construit un dictionnaire jour → taux, puis on remplit les jours manquants avec null
+    const dayMap = {};
+    dailyData.forEach(d => {
+      dayMap[d.day] = d.total > 0 ? Math.round(d.leaked / d.total * 1000) / 10 : 0;
+    });
+    const trend_30d = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      trend_30d.push(dayMap[key] !== undefined ? dayMap[key] : null);
+    }
+
+    res.json({
+      total_bugs:            total,
+      bugs_with_scenario,
+      bugs_without_scenario,
+      leak_rate_percent,
+      by_severity,
+      by_feature,
+      trend_30d,
+      recent_bugs: bugs.slice(0, 10).map(b => ({
+        id:             b.id,
+        title:          b.title,
+        severity:       b.severity,
+        feature:        b.feature,
+        detected_date:  b.detected_date,
+        scenario_id:    b.scenario_id,
+        scenario_title: b.scenario_title,
+        external_id:    b.external_id
+      }))
+    });
+  }).catch(err => res.status(500).json({ error: err.message }));
+});
+
+// ══════════════════════════════════════════════════════
 // ██  API COMEP REPORT (P2.2)
 // ══════════════════════════════════════════════════════
 
@@ -1260,8 +1483,9 @@ app.get("/api/projects/:id/comep-report", requireAuth, (req, res) => {
     q(`SELECT id, name, type, started_at, finished_at, total, pass, fail, blocked, skipped, results_json
        FROM campaigns WHERE project_id = ? ORDER BY finished_at DESC`, [projectId]),
     q(`SELECT feature_detected, complexity, ambiguities, regression_risks, created_at
-       FROM scenario_analyses WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`, [projectId])
-  ]).then(([project, scenarios, campaigns, analyses]) => {
+       FROM scenario_analyses WHERE project_id = ? ORDER BY created_at DESC LIMIT 1`, [projectId]),
+    q(`SELECT * FROM production_bugs WHERE project_id = ? AND detected_date >= date('now', '-30 days') ORDER BY detected_date DESC`, [projectId])
+  ]).then(([project, scenarios, campaigns, analyses, recentBugs]) => {
     if (!project) return res.status(404).json({ error: "Projet non trouvé" });
 
     const totalScenarios  = scenarios.length;
@@ -1413,6 +1637,26 @@ app.get("/api/projects/:id/comep-report", requireAuth, (req, res) => {
       });
     }
 
+    // ── Section qualité production ────────────────────
+    const totalBugs30d   = recentBugs.length;
+    const leakedBugs30d  = recentBugs.filter(b => b.scenario_id !== null).length;
+    const leakRate30d    = totalBugs30d > 0
+      ? Math.round(leakedBugs30d / totalBugs30d * 1000) / 10
+      : 0;
+    const criticalBugs30d = recentBugs.filter(b => b.severity === "critical" || b.severity === "major");
+
+    if (totalBugs30d > 0 && leakRate30d > 25) {
+      recommendations.push({
+        priority: "HIGH",
+        text: `Taux de fuite production élevé (${leakRate30d}% sur 30j) : ${leakedBugs30d} bug(s) auraient pu être détectés en recette.`
+      });
+    } else if (totalBugs30d > 0 && leakRate30d > 10) {
+      recommendations.push({
+        priority: "MEDIUM",
+        text: `Taux de fuite production modéré (${leakRate30d}% sur 30j). Renforcer la couverture des features impactées.`
+      });
+    }
+
     res.json({
       generated_at: new Date().toISOString(),
       project,
@@ -1454,7 +1698,20 @@ app.get("/api/projects/:id/comep-report", requireAuth, (req, res) => {
         ambiguities:      JSON.parse(analyses[0].ambiguities || "[]"),
         regression_risks: JSON.parse(analyses[0].regression_risks || "[]"),
         date:             analyses[0].created_at
-      } : null
+      } : null,
+      production: {
+        total_bugs_30d:   totalBugs30d,
+        leaked_bugs_30d:  leakedBugs30d,
+        leak_rate_30d:    leakRate30d,
+        critical_bugs_30d: criticalBugs30d.map(b => ({
+          id:            b.id,
+          title:         b.title,
+          severity:      b.severity,
+          feature:       b.feature,
+          detected_date: b.detected_date,
+          external_id:   b.external_id
+        }))
+      }
     });
   }).catch(err => res.status(500).json({ error: err.message }));
 });

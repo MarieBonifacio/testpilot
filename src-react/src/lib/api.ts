@@ -8,6 +8,7 @@ import type {
   ComepReport,
   User, AuthState,
   Notification,
+  ProductionBug, LeakRateKPI, ProductionBugListResponse,
 } from '../types';
 
 const BASE_URL = '';
@@ -446,4 +447,31 @@ export const authStore = {
   getAuthState,
   setAuthState,
   clearAuthState,
+};
+
+// ══════════════════════════════════════════════════════
+// P4.1 — Production bugs / Taux de fuite
+// ══════════════════════════════════════════════════════
+export const productionBugsApi = {
+  list: (projectId: number, params?: {
+    page?: number; limit?: number; severity?: string;
+    has_scenario?: 'true' | 'false'; feature?: string;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.page)         qs.set('page',         String(params.page));
+    if (params?.limit)        qs.set('limit',        String(params.limit));
+    if (params?.severity)     qs.set('severity',     params.severity);
+    if (params?.has_scenario) qs.set('has_scenario', params.has_scenario);
+    if (params?.feature)      qs.set('feature',      params.feature);
+    const q = qs.toString() ? `?${qs.toString()}` : '';
+    return api.get<ProductionBugListResponse>(`/api/projects/${projectId}/production-bugs${q}`);
+  },
+  create: (projectId: number, data: Omit<ProductionBug, 'id' | 'project_id' | 'created_at' | 'scenario_title' | 'scenario_ref'>) =>
+    api.post<{ id: number }>(`/api/projects/${projectId}/production-bugs`, data),
+  update: (id: number, data: Partial<Omit<ProductionBug, 'id' | 'project_id' | 'created_at' | 'scenario_title' | 'scenario_ref'>>) =>
+    api.put<{ updated: boolean }>(`/api/production-bugs/${id}`, data),
+  delete: (id: number) =>
+    api.delete<{ deleted: boolean }>(`/api/production-bugs/${id}`),
+  getLeakRate: (projectId: number) =>
+    api.get<LeakRateKPI>(`/api/projects/${projectId}/kpis/leak-rate`),
 };

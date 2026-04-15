@@ -12,11 +12,12 @@ import { ClickUp } from './pages/ClickUp';
 import { Comep } from './pages/Comep';
 import { Login } from './pages/Login';
 import { Users } from './pages/Users';
+import { ProductionBugs } from './pages/ProductionBugs';
 import { ProjectSelector } from './components/ProjectSelector';
 import { NotificationBell } from './components/NotificationBell';
 import {
   Plane, Sun, Moon, LogOut, FileSpreadsheet,
-  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon,
+  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug,
 } from 'lucide-react';
 
 // ── Garde de route ─────────────────────────────────────
@@ -85,6 +86,9 @@ function Navigation() {
         </NavLink>
         <NavLink to="/comep"         className={navLinkClass}>
           <span className="flex items-center gap-1"><ShieldCheck size={13} />COMEP</span>
+        </NavLink>
+        <NavLink to="/production-bugs" className={navLinkClass}>
+          <span className="flex items-center gap-1"><Bug size={13} />Fuites prod.</span>
         </NavLink>
         <NavLink to="/export"        className={navLinkClass}>Export</NavLink>
         {(user?.role === 'cp' || user?.role === 'admin') && (
@@ -162,6 +166,7 @@ export default function App() {
                     <Route path="/clickup"     element={<ClickUp />} />
                     <Route path="/comep"       element={<Comep />} />
                     <Route path="/export"      element={<Export />} />
+                    <Route path="/production-bugs" element={<ProductionBugs />} />
                     <Route path="/users"       element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
                     <Route path="*"            element={<Navigate to="/" replace />} />
                   </Routes>

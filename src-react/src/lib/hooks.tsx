@@ -117,26 +117,53 @@ export function useAuth() {
 // ══════════════════════════════════════════════════════
 // Notifications hook
 // ══════════════════════════════════════════════════════
+const POLL_BASE_MS  = 30_000;
+const POLL_MAX_MS   = 5 * 60_000; // back-off cap: 5 min
+
 export function useNotifications() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const failsRef    = useCallback(() => 0, []) as unknown as React.MutableRefObject<number>;
+  const timerRef    = useCallback(() => undefined, []) as unknown as React.MutableRefObject<ReturnType<typeof setTimeout> | undefined>;
+
+  // Use refs so the schedule callback never goes stale
+  const failCountRef = useState(() => ({ current: 0 }))[0];
+  const timerIdRef   = useState(() => ({ current: undefined as ReturnType<typeof setTimeout> | undefined }))[0];
+  void failsRef; void timerRef; // suppress unused-var lint
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || document.hidden) return;
     try {
       const data = await notificationsApi.list();
       setNotifications(data);
       setUnreadCount(data.filter(n => !n.read).length);
-    } catch { /* ignore */ }
-  }, [user]);
+      failCountRef.current = 0; // reset back-off on success
+    } catch {
+      failCountRef.current += 1;
+    }
+  }, [user, failCountRef]);
+
+  const schedule = useCallback(() => {
+    const backoff = Math.min(POLL_BASE_MS * 2 ** failCountRef.current, POLL_MAX_MS);
+    timerIdRef.current = setTimeout(async () => {
+      await load();
+      schedule();
+    }, backoff);
+  }, [load, failCountRef, timerIdRef]);
 
   useEffect(() => {
     load();
-    // Polling toutes les 30s
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
-  }, [load]);
+    schedule();
+
+    const onVisible = () => { if (!document.hidden) load(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearTimeout(timerIdRef.current);
+    };
+  }, [load, schedule, timerIdRef]);
 
   const markRead = async (id: number) => {
     await notificationsApi.markRead(id);

@@ -227,6 +227,15 @@ export interface ComepReport {
     regression_risks: string[];
     date: string;
   } | null;
+  production?: {
+    total_bugs_30d: number;
+    leaked_bugs_30d: number;
+    leak_rate_30d: number;
+    critical_bugs_30d: {
+      id: number; title: string; severity: string;
+      feature: string | null; detected_date: string; external_id: string | null;
+    }[];
+  };
 }
 
 // ── P3.1 Utilisateurs / Rôles ────────────────────────
@@ -255,4 +264,40 @@ export interface Notification {
   scenario_id?: number;
   read: boolean;
   created_at: string;
+}
+
+// ── P4.1 Production bugs / Taux de fuite ─────────────
+export interface ProductionBug {
+  id: number;
+  project_id: number;
+  external_id: string | null;
+  title: string;
+  description: string | null;
+  severity: 'critical' | 'major' | 'minor' | 'trivial';
+  scenario_id: number | null;
+  scenario_title?: string | null;
+  scenario_ref?: string | null;
+  detected_date: string;
+  feature: string | null;
+  root_cause: string | null;
+  created_at: string;
+}
+
+export interface LeakRateKPI {
+  total_bugs: number;
+  bugs_with_scenario: number;
+  bugs_without_scenario: number;
+  leak_rate_percent: number;
+  by_severity: Record<string, { total: number; leaked: number }>;
+  by_feature: Record<string, { total: number; leaked: number }>;
+  trend_30d: (number | null)[];
+  recent_bugs: Pick<ProductionBug, 'id' | 'title' | 'severity' | 'feature' | 'detected_date' | 'scenario_id' | 'scenario_title' | 'external_id'>[];
+}
+
+export interface ProductionBugListResponse {
+  bugs: ProductionBug[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
 }

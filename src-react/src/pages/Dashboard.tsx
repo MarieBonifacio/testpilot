@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useProject } from '../lib/hooks';
-import { projectsApi, scenariosApi, campaignsApi } from '../lib/api';
-import type { Scenario } from '../types';
-import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { projectsApi, scenariosApi, campaignsApi, productionBugsApi } from '../lib/api';
+import type { Scenario, LeakRateKPI } from '../types';
+import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus, Bug } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 
 interface FeatureStats {
   name: string;
@@ -30,6 +31,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [recentCampaigns, setRecentCampaigns] = useState<CampaignKpi[]>([]);
   const [kpiAggregates, setKpiAggregates] = useState<KpiAggregates | null>(null);
+  const [leakKpi, setLeakKpi] = useState<LeakRateKPI | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -40,10 +42,11 @@ export function Dashboard() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [scenarios, projectStats, kpisData] = await Promise.all([
+      const [scenarios, projectStats, kpisData, leakData] = await Promise.all([
         scenariosApi.list(projectId),
         projectsApi.getStats(projectId).catch(() => ({ total: 0, accepted: 0, tnr_count: 0, critical: 0, features: [] })),
         campaignsApi.getKpis(projectId).catch(() => ({ campaigns: [], aggregates: null })),
+        productionBugsApi.getLeakRate(projectId).catch(() => null),
       ]);
 
       setStats({
@@ -51,6 +54,8 @@ export function Dashboard() {
         accepted: projectStats.accepted || scenarios.filter(s => s.accepted).length,
         tnr: projectStats.tnr_count ?? scenarios.filter(s => s.is_tnr).length,
       });
+
+      setLeakKpi(leakData);
 
       setRecentCampaigns((kpisData.campaigns || []).slice(-5).reverse());
       setKpiAggregates(kpisData.aggregates || null);
@@ -220,6 +225,67 @@ export function Dashboard() {
       {features.length === 0 && !loading && (
         <div className="empty-state">
           <p>Aucun scénario généré pour ce projet.</p>
+        </div>
+      )}
+
+      {/* Widget taux de fuite production */}
+      {leakKpi !== null && (
+        <div className="mt-8">
+          <div className="text-[0.72rem] font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Qualité production</div>
+          <div className="rounded-lg p-4 flex items-center gap-6"
+            style={{
+              background: 'var(--bg-elevated)',
+              border: `1px solid ${leakKpi.leak_rate_percent <= 10 ? 'var(--success)' : leakKpi.leak_rate_percent <= 25 ? 'var(--warning)' : 'var(--danger)'}`,
+            }}>
+            {/* Valeur principale */}
+            <div className="text-center flex-shrink-0" style={{ minWidth: 80 }}>
+              <div className="text-3xl font-bold" style={{ color: leakKpi.leak_rate_percent <= 10 ? 'var(--success)' : leakKpi.leak_rate_percent <= 25 ? 'var(--warning)' : 'var(--danger)' }}>
+                {leakKpi.leak_rate_percent}%
+              </div>
+              <div className="text-[0.7rem] font-bold uppercase tracking-wide mt-1" style={{ color: 'var(--text-dim)' }}>Taux de fuite</div>
+            </div>
+            {/* Séparateur */}
+            <div style={{ width: 1, height: 48, background: 'var(--border)', flexShrink: 0 }} />
+            {/* Stats */}
+            <div className="flex gap-5 flex-1">
+              <div>
+                <div className="text-lg font-bold" style={{ color: 'var(--text)' }}>{leakKpi.total_bugs}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>bugs prod.</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold" style={{ color: 'var(--danger)' }}>{leakKpi.bugs_with_scenario}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>fuites</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold" style={{ color: 'var(--text-muted)' }}>{leakKpi.bugs_without_scenario}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>non couverts</div>
+              </div>
+            </div>
+            {/* Sparkline */}
+            {leakKpi.trend_30d.some(v => v !== null) && (
+              <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                <svg width={100} height={30} style={{ display: 'block' }}>
+                  {(() => {
+                    const vals = leakKpi.trend_30d;
+                    const maxV = Math.max(...vals.filter((v): v is number => v !== null), 1);
+                    const pts = vals.length;
+                    const points = vals
+                      .map((v, i) => v !== null ? `${(i / (pts - 1)) * 100},${30 - (v / maxV) * 28}` : null)
+                      .filter(Boolean).join(' ');
+                    const color = leakKpi.leak_rate_percent <= 10 ? 'var(--success)' : leakKpi.leak_rate_percent <= 25 ? 'var(--warning)' : 'var(--danger)';
+                    return <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />;
+                  })()}
+                </svg>
+                <span className="text-[0.65rem]" style={{ color: 'var(--text-dim)' }}>tendance 30j</span>
+              </div>
+            )}
+            {/* Lien */}
+            <NavLink to="/production-bugs"
+              className="btn btn-ghost flex items-center gap-1.5 flex-shrink-0 text-xs"
+              style={{ textDecoration: 'none' }}>
+              <Bug size={12} /> Voir détails
+            </NavLink>
+          </div>
         </div>
       )}
 

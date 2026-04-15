@@ -104,7 +104,26 @@ const db = new sqlite3.Database(dbPath, (err) => {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
           )`,
-          `CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`
+          `CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)`,
+          // P4.1 : table production_bugs (taux de fuite)
+          `CREATE TABLE IF NOT EXISTS production_bugs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            external_id TEXT,
+            title TEXT NOT NULL,
+            description TEXT,
+            severity TEXT CHECK(severity IN ('critical', 'major', 'minor', 'trivial')) DEFAULT 'major',
+            scenario_id INTEGER,
+            detected_date TEXT NOT NULL,
+            feature TEXT,
+            root_cause TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE SET NULL
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_production_bugs_project  ON production_bugs(project_id)`,
+          `CREATE INDEX IF NOT EXISTS idx_production_bugs_scenario ON production_bugs(scenario_id)`,
+          `CREATE INDEX IF NOT EXISTS idx_production_bugs_date     ON production_bugs(detected_date)`
         ];
 
         let pending = migrations.length;
