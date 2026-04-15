@@ -27,6 +27,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user || !roles.includes(user.role)) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 // ── Navigation principale ──────────────────────────────
 function Navigation() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
@@ -156,7 +162,7 @@ export default function App() {
                     <Route path="/clickup"     element={<ClickUp />} />
                     <Route path="/comep"       element={<Comep />} />
                     <Route path="/export"      element={<Export />} />
-                    <Route path="/users"       element={<Users />} />
+                    <Route path="/users"       element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
                     <Route path="*"            element={<Navigate to="/" replace />} />
                   </Routes>
                 </main>

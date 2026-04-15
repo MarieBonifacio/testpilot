@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useProject } from '../lib/hooks';
-import { projectsApi, scenariosApi } from '../lib/api';
+import { projectsApi, scenariosApi, campaignsApi } from '../lib/api';
 import type { Scenario } from '../types';
-import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
+import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface FeatureStats {
   name: string;
@@ -11,12 +11,25 @@ interface FeatureStats {
   scenarios: Scenario[];
 }
 
+interface CampaignKpi {
+  id: number; name: string; type: string; finished_at: string;
+  total: number; pass: number; fail: number; blocked: number;
+  success_rate: number; leak_rate: number;
+}
+
+interface KpiAggregates {
+  total_campaigns: number; avg_success_rate: number; avg_leak_rate: number;
+  avg_duration_sec: number; trend_vs_previous: number | null;
+}
+
 export function Dashboard() {
   const { projectId } = useProject();
   const [features, setFeatures] = useState<FeatureStats[]>([]);
   const [stats, setStats] = useState({ total: 0, accepted: 0, tnr: 0 });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [recentCampaigns, setRecentCampaigns] = useState<CampaignKpi[]>([]);
+  const [kpiAggregates, setKpiAggregates] = useState<KpiAggregates | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -27,9 +40,10 @@ export function Dashboard() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [scenarios, projectStats] = await Promise.all([
+      const [scenarios, projectStats, kpisData] = await Promise.all([
         scenariosApi.list(projectId),
         projectsApi.getStats(projectId).catch(() => ({ total: 0, accepted: 0, tnr_count: 0, critical: 0, features: [] })),
+        campaignsApi.getKpis(projectId).catch(() => ({ campaigns: [], aggregates: null })),
       ]);
 
       setStats({
@@ -37,6 +51,9 @@ export function Dashboard() {
         accepted: projectStats.accepted || scenarios.filter(s => s.accepted).length,
         tnr: projectStats.tnr_count ?? scenarios.filter(s => s.is_tnr).length,
       });
+
+      setRecentCampaigns((kpisData.campaigns || []).slice(-5).reverse());
+      setKpiAggregates(kpisData.aggregates || null);
 
       // Group by feature
       const featureMap = new Map<string, Scenario[]>();
@@ -203,6 +220,91 @@ export function Dashboard() {
       {features.length === 0 && !loading && (
         <div className="empty-state">
           <p>Aucun scénario généré pour ce projet.</p>
+        </div>
+      )}
+
+      {/* KPIs campagne */}
+      {kpiAggregates && (
+        <div className="mt-8">
+          <div className="text-[0.72rem] font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Campagnes de test</div>
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            {[
+              { label: 'Campagnes', value: kpiAggregates.total_campaigns, color: 'var(--text)' },
+              { label: 'Taux succès moy.', value: `${kpiAggregates.avg_success_rate}%`, color: 'var(--success)' },
+              { label: 'Taux fuite moy.', value: `${kpiAggregates.avg_leak_rate}%`, color: 'var(--danger)' },
+              {
+                label: 'Tendance',
+                value: kpiAggregates.trend_vs_previous === null
+                  ? '—'
+                  : kpiAggregates.trend_vs_previous > 0
+                    ? `+${kpiAggregates.trend_vs_previous}%`
+                    : kpiAggregates.trend_vs_previous < 0
+                      ? `${kpiAggregates.trend_vs_previous}%`
+                      : '=',
+                color: kpiAggregates.trend_vs_previous === null
+                  ? 'var(--text-muted)'
+                  : kpiAggregates.trend_vs_previous > 0
+                    ? 'var(--success)'
+                    : kpiAggregates.trend_vs_previous < 0
+                      ? 'var(--danger)'
+                      : 'var(--text-muted)',
+                icon: kpiAggregates.trend_vs_previous === null ? <Minus size={14} />
+                    : kpiAggregates.trend_vs_previous > 0  ? <TrendingUp size={14} />
+                    : kpiAggregates.trend_vs_previous < 0  ? <TrendingDown size={14} />
+                    : <Minus size={14} />,
+              },
+            ].map(({ label, value, color, icon }) => (
+              <div key={label} className="rounded-lg p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                <div className="text-[0.72rem] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-dim)' }}>{label}</div>
+                <div className="text-xl font-bold flex items-center gap-1.5" style={{ color }}>
+                  {icon}{value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {recentCampaigns.length > 0 && (
+            <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                    {['Campagne', 'Type', 'Date', 'Total', 'Pass', 'Fail', 'Taux succès'].map(h => (
+                      <th key={h} className="px-4 py-2.5 text-left text-[0.7rem] font-bold uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentCampaigns.map((c, i) => (
+                    <tr key={c.id} style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg-elevated)', borderBottom: '1px solid var(--bg-hover)' }}>
+                      <td className="px-4 py-2.5 font-medium">{c.name}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="text-[0.68rem] px-1.5 py-0.5 rounded font-semibold"
+                          style={{ background: c.type === 'TNR' ? 'var(--purple-bg)' : 'var(--info-bg)', color: c.type === 'TNR' ? 'var(--purple)' : 'var(--info)' }}>
+                          {c.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-[0.78rem]" style={{ color: 'var(--text-muted)' }}>
+                        {c.finished_at ? new Date(c.finished_at).toLocaleDateString('fr-FR') : '—'}
+                      </td>
+                      <td className="px-4 py-2.5">{c.total}</td>
+                      <td className="px-4 py-2.5 font-semibold" style={{ color: 'var(--success)' }}>{c.pass}</td>
+                      <td className="px-4 py-2.5 font-semibold" style={{ color: c.fail > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>{c.fail}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
+                            <div className="h-full rounded-full" style={{ width: `${c.success_rate}%`, background: c.success_rate >= 80 ? 'var(--success)' : c.success_rate >= 50 ? 'var(--warning)' : 'var(--danger)' }} />
+                          </div>
+                          <span className="text-[0.78rem] font-semibold" style={{ color: c.success_rate >= 80 ? 'var(--success)' : c.success_rate >= 50 ? 'var(--warning)' : 'var(--danger)' }}>
+                            {c.success_rate}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

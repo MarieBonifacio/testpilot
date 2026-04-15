@@ -176,10 +176,15 @@ export const importApi = {
 // P1.2 Historique campagnes
 // ══════════════════════════════════════════════════════
 export const campaignsApi = {
-  list:   (projectId: number) => api.get<Campaign[]>(`/api/projects/${projectId}/campaigns`),
-  get:    (id: number)        => api.get<Campaign>(`/api/campaigns/${id}`),
-  archive:(projectId: number, data: Partial<Campaign>) =>
-    api.post<Campaign>(`/api/projects/${projectId}/campaigns`, data),
+  list:    (projectId: number) => api.get<Campaign[]>(`/api/projects/${projectId}/campaigns`),
+  get:     (id: number)        => api.get<Campaign>(`/api/campaigns/${id}`),
+  archive: (projectId: number, data: Partial<Campaign> & { results?: unknown[] }) =>
+    api.post<{ id: number }>(`/api/projects/${projectId}/campaigns`, data),
+  delete:  (id: number) => api.delete<void>(`/api/campaigns/${id}`),
+  getKpis: (projectId: number) => api.get<{
+    campaigns: { id: number; name: string; type: string; finished_at: string; total: number; pass: number; fail: number; blocked: number; success_rate: number; leak_rate: number }[];
+    aggregates: { total_campaigns: number; avg_success_rate: number; avg_leak_rate: number; avg_duration_sec: number; trend_vs_previous: number | null } | null;
+  }>(`/api/projects/${projectId}/campaigns/kpis`),
 };
 
 // ══════════════════════════════════════════════════════
@@ -196,20 +201,81 @@ export const traceabilityApi = {
 // P2.1 ClickUp
 // ══════════════════════════════════════════════════════
 export const clickupApi = {
-  getConfig:   (projectId: number) =>
-    api.get<ClickUpConfig>(`/api/projects/${projectId}/clickup-config`),
-  saveConfig:  (projectId: number, data: ClickUpConfig) =>
-    api.put<ClickUpConfig>(`/api/projects/${projectId}/clickup-config`, data),
-  getLists:    (token: string) =>
-    api.post<ClickUpList[]>('/api/clickup/lists', { token }),
-  createBatch: (payload: {
+  /** Charge la config — mappe api_token → token pour usage front */
+  getConfig: async (projectId: number): Promise<ClickUpConfig> => {
+    const raw = await api.get<ClickUpConfig & { api_token?: string }>(
+      `/api/projects/${projectId}/clickup-config`
+    );
+    return { ...raw, token: raw.token ?? raw.api_token ?? '' };
+  },
+
+  /** Sauvegarde — renomme token → api_token pour le backend */
+  saveConfig: (projectId: number, data: ClickUpConfig) =>
+    api.put<{ saved: boolean }>(`/api/projects/${projectId}/clickup-config`, {
+      api_token:        data.token ?? data.api_token,
+      list_id:          data.list_id,
+      tag_prefix:       data.tag_prefix,
+      default_priority: data.default_priority,
+      enabled:          data.enabled ?? true,
+      workspace_id:     data.workspace_id,
+    }),
+
+  /** GET /api/clickup/lists?token=... — le backend attend un GET, pas un POST */
+  getLists: (token: string): Promise<ClickUpList[]> =>
+    fetch(`/api/clickup/lists?token=${encodeURIComponent(token)}`, {
+      headers: { Authorization: `Bearer ${(JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string }).token ?? ''}` },
+    }).then(async res => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error || 'Erreur ClickUp');
+      }
+      const data = await res.json() as { lists?: ClickUpList[] };
+      // Le backend retourne { lists: [...] }
+      return data.lists ?? (data as unknown as ClickUpList[]);
+    }),
+
+  /** Crée les tickets en lot depuis une campagne — construit les items[] attendus par le backend */
+  createBatch: async (payload: {
     projectId: number;
     campaignId: number;
     listId: string;
     token: string;
     tagPrefix?: string;
     defaultPriority?: number;
-  }) => api.post<{ created: number; tasks: unknown[] }>('/api/clickup/create-batch', payload),
+  }): Promise<{ created: number; errors: number; results: unknown[] }> => {
+    // Récupérer les détails de la campagne pour extraire les résultats FAIL/BLOQUÉ
+    const campaign = await api.get<Campaign & { results?: { id?: string; title?: string; feature?: string; status?: string; comment?: string; priority?: string; given?: string; when?: string; then?: string; source_reference?: string }[] }>(
+      `/api/campaigns/${payload.campaignId}`
+    );
+    const failedItems = (campaign.results ?? [])
+      .filter(r => r.status === 'fail' || r.status === 'blocked')
+      .map(r => ({
+        scenario: {
+          id:               r.id,
+          title:            r.title ?? '(sans titre)',
+          feature:          r.feature,
+          priority:         r.priority ?? 'medium',
+          source_reference: r.source_reference,
+          given:            r.given,
+          when:             r.when,
+          then:             r.then,
+        },
+        status:  r.status,
+        comment: r.comment ?? null,
+      }));
+
+    if (failedItems.length === 0) {
+      throw new Error('Aucun résultat FAIL ou BLOQUÉ dans cette campagne.');
+    }
+
+    return api.post<{ created: number; errors: number; results: unknown[] }>('/api/clickup/create-batch', {
+      api_token:     payload.token,
+      list_id:       payload.listId,
+      campaign_name: (campaign.name ?? campaign.campaign_name) ?? 'Campagne',
+      tag_prefix:    payload.tagPrefix,
+      items:         failedItems,
+    });
+  },
 };
 
 // ══════════════════════════════════════════════════════

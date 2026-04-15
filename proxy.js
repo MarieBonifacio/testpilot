@@ -110,7 +110,7 @@ app.use(authMiddleware);
 // ══════════════════════════════════════════════════════
 
 // GET /api/projects - Liste tous les projets
-app.get("/api/projects", (req, res) => {
+app.get("/api/projects", requireAuth, (req, res) => {
   db.all(`
     SELECT p.*, 
            (SELECT COUNT(*) FROM scenarios WHERE project_id = p.id) as scenario_count,
@@ -124,7 +124,7 @@ app.get("/api/projects", (req, res) => {
 });
 
 // GET /api/projects/:id - Détail d'un projet
-app.get("/api/projects/:id", (req, res) => {
+app.get("/api/projects/:id", requireAuth, (req, res) => {
   db.get("SELECT * FROM projects WHERE id = ?", [req.params.id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row) return res.status(404).json({ error: "Projet non trouvé" });
@@ -133,7 +133,7 @@ app.get("/api/projects/:id", (req, res) => {
 });
 
 // POST /api/projects - Créer un projet
-app.post("/api/projects", (req, res) => {
+app.post("/api/projects", requireAuth, (req, res) => {
   const { name, tech_stack, business_domain, description } = req.body;
   if (!name) return res.status(400).json({ error: "Le nom du projet est requis" });
   
@@ -153,7 +153,7 @@ app.post("/api/projects", (req, res) => {
 });
 
 // PUT /api/projects/:id - Modifier un projet
-app.put("/api/projects/:id", (req, res) => {
+app.put("/api/projects/:id", requireAuth, (req, res) => {
   const { name, tech_stack, business_domain, description } = req.body;
   db.run(
     "UPDATE projects SET name = ?, tech_stack = ?, business_domain = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -167,7 +167,7 @@ app.put("/api/projects/:id", (req, res) => {
 });
 
 // DELETE /api/projects/:id - Supprimer un projet
-app.delete("/api/projects/:id", (req, res) => {
+app.delete("/api/projects/:id", requireAuth, (req, res) => {
   db.run("DELETE FROM projects WHERE id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     if (this.changes === 0) return res.status(404).json({ error: "Projet non trouvé" });
@@ -180,7 +180,7 @@ app.delete("/api/projects/:id", (req, res) => {
 // ══════════════════════════════════════════════════════
 
 // GET /api/projects/:id/context - Récupérer le contexte d'un projet
-app.get("/api/projects/:id/context", (req, res) => {
+app.get("/api/projects/:id/context", requireAuth, (req, res) => {
   db.get("SELECT * FROM project_contexts WHERE project_id = ?", [req.params.id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(row || { project_id: parseInt(req.params.id), adjacent_features: "", global_constraints: "" });
@@ -188,7 +188,7 @@ app.get("/api/projects/:id/context", (req, res) => {
 });
 
 // PUT /api/projects/:id/context - Mettre à jour le contexte
-app.put("/api/projects/:id/context", (req, res) => {
+app.put("/api/projects/:id/context", requireAuth, (req, res) => {
   const { adjacent_features, global_constraints } = req.body;
   const projectId = req.params.id;
   
@@ -210,7 +210,7 @@ app.put("/api/projects/:id/context", (req, res) => {
 // ══════════════════════════════════════════════════════
 
 // GET /api/projects/:id/scenarios - Liste les scénarios d'un projet
-app.get("/api/projects/:id/scenarios", (req, res) => {
+app.get("/api/projects/:id/scenarios", requireAuth, (req, res) => {
   const { accepted, is_tnr } = req.query;
   let sql = `SELECT s.*, u.display_name AS assignee_name
              FROM scenarios s
@@ -235,7 +235,7 @@ app.get("/api/projects/:id/scenarios", (req, res) => {
 });
 
 // POST /api/projects/:id/scenarios - Créer un ou plusieurs scénarios
-app.post("/api/projects/:id/scenarios", (req, res) => {
+app.post("/api/projects/:id/scenarios", requireAuth, (req, res) => {
   const projectId = req.params.id;
   const scenarios = Array.isArray(req.body) ? req.body : [req.body];
 
@@ -284,7 +284,7 @@ app.post("/api/projects/:id/scenarios", (req, res) => {
 });
 
 // PUT /api/scenarios/:id - Modifier un scénario
-app.put("/api/scenarios/:id", (req, res) => {
+app.put("/api/scenarios/:id", requireAuth, (req, res) => {
   const { title, scenario_type, priority, given_text, when_text, then_text, accepted, is_tnr } = req.body;
   db.run(`
     UPDATE scenarios SET 
@@ -306,7 +306,7 @@ app.put("/api/scenarios/:id", (req, res) => {
 });
 
 // PATCH /api/scenarios/:id/accept - Basculer l'état accepté
-app.patch("/api/scenarios/:id/accept", (req, res) => {
+app.patch("/api/scenarios/:id/accept", requireAuth, (req, res) => {
   db.run("UPDATE scenarios SET accepted = NOT accepted, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     if (this.changes === 0) return res.status(404).json({ error: "Scénario non trouvé" });
@@ -315,7 +315,7 @@ app.patch("/api/scenarios/:id/accept", (req, res) => {
 });
 
 // PATCH /api/scenarios/:id/tnr - Marquer/démarquer comme TNR
-app.patch("/api/scenarios/:id/tnr", (req, res) => {
+app.patch("/api/scenarios/:id/tnr", requireAuth, (req, res) => {
   db.run("UPDATE scenarios SET is_tnr = NOT is_tnr, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     if (this.changes === 0) return res.status(404).json({ error: "Scénario non trouvé" });
@@ -324,7 +324,7 @@ app.patch("/api/scenarios/:id/tnr", (req, res) => {
 });
 
 // DELETE /api/scenarios/:id - Supprimer un scénario
-app.delete("/api/scenarios/:id", (req, res) => {
+app.delete("/api/scenarios/:id", requireAuth, (req, res) => {
   db.run("DELETE FROM scenarios WHERE id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     if (this.changes === 0) return res.status(404).json({ error: "Scénario non trouvé" });
@@ -333,7 +333,7 @@ app.delete("/api/scenarios/:id", (req, res) => {
 });
 
 // DELETE /api/projects/:id/scenarios - Supprimer tous les scénarios d'un projet
-app.delete("/api/projects/:id/scenarios", (req, res) => {
+app.delete("/api/projects/:id/scenarios", requireAuth, (req, res) => {
   db.run("DELETE FROM scenarios WHERE project_id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ deleted: this.changes });
@@ -341,7 +341,7 @@ app.delete("/api/projects/:id/scenarios", (req, res) => {
 });
 
 // POST /api/projects/:id/scenarios/accept-all - Accepter tous les scénarios
-app.post("/api/projects/:id/scenarios/accept-all", (req, res) => {
+app.post("/api/projects/:id/scenarios/accept-all", requireAuth, (req, res) => {
   db.run("UPDATE scenarios SET accepted = 1, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ accepted: this.changes });
@@ -353,7 +353,7 @@ app.post("/api/projects/:id/scenarios/accept-all", (req, res) => {
 // ══════════════════════════════════════════════════════
 
 // GET /api/projects/:id/analysis - Récupérer la dernière analyse
-app.get("/api/projects/:id/analysis", (req, res) => {
+app.get("/api/projects/:id/analysis", requireAuth, (req, res) => {
   db.get("SELECT * FROM scenario_analyses WHERE project_id = ? ORDER BY created_at DESC LIMIT 1", [req.params.id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (row) {
@@ -365,7 +365,7 @@ app.get("/api/projects/:id/analysis", (req, res) => {
 });
 
 // POST /api/projects/:id/analysis - Sauvegarder une analyse
-app.post("/api/projects/:id/analysis", (req, res) => {
+app.post("/api/projects/:id/analysis", requireAuth, (req, res) => {
   const { feature_detected, complexity, ambiguities, regression_risks } = req.body;
   db.run(
     "INSERT INTO scenario_analyses (project_id, feature_detected, complexity, ambiguities, regression_risks) VALUES (?, ?, ?, ?, ?)",
@@ -382,7 +382,7 @@ app.post("/api/projects/:id/analysis", (req, res) => {
 // ══════════════════════════════════════════════════════
 
 // GET /api/projects/:id/sessions - Liste des sessions de test
-app.get("/api/projects/:id/sessions", (req, res) => {
+app.get("/api/projects/:id/sessions", requireAuth, (req, res) => {
   db.all(`
     SELECT s.*,
            (SELECT COUNT(*) FROM test_results WHERE session_id = s.id AND status = 'PASS') as pass_count,
@@ -398,7 +398,7 @@ app.get("/api/projects/:id/sessions", (req, res) => {
 });
 
 // POST /api/projects/:id/sessions - Créer une session
-app.post("/api/projects/:id/sessions", (req, res) => {
+app.post("/api/projects/:id/sessions", requireAuth, (req, res) => {
   const { session_name, scenario_count } = req.body;
   db.run(
     "INSERT INTO test_sessions (project_id, session_name, scenario_count) VALUES (?, ?, ?)",
@@ -411,7 +411,7 @@ app.post("/api/projects/:id/sessions", (req, res) => {
 });
 
 // GET /api/sessions/:id - Détail d'une session avec résultats
-app.get("/api/sessions/:id", (req, res) => {
+app.get("/api/sessions/:id", requireAuth, (req, res) => {
   db.get("SELECT * FROM test_sessions WHERE id = ?", [req.params.id], (err, session) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!session) return res.status(404).json({ error: "Session non trouvée" });
@@ -430,7 +430,7 @@ app.get("/api/sessions/:id", (req, res) => {
 });
 
 // PUT /api/sessions/:id/finish - Terminer une session
-app.put("/api/sessions/:id/finish", (req, res) => {
+app.put("/api/sessions/:id/finish", requireAuth, (req, res) => {
   db.run("UPDATE test_sessions SET finished_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ finished: true });
@@ -438,7 +438,7 @@ app.put("/api/sessions/:id/finish", (req, res) => {
 });
 
 // POST /api/sessions/:id/results - Enregistrer un résultat de test
-app.post("/api/sessions/:id/results", (req, res) => {
+app.post("/api/sessions/:id/results", requireAuth, (req, res) => {
   const { scenario_id, status, comment } = req.body;
   if (!scenario_id || !status) {
     return res.status(400).json({ error: "scenario_id et status sont requis" });
@@ -458,7 +458,7 @@ app.post("/api/sessions/:id/results", (req, res) => {
 // ══════════════════════════════════════════════════════
 
 // GET /api/projects/:id/stats - Statistiques d'un projet
-app.get("/api/projects/:id/stats", (req, res) => {
+app.get("/api/projects/:id/stats", requireAuth, (req, res) => {
   const projectId = req.params.id;
   
   db.get(`
@@ -496,7 +496,7 @@ app.get("/api/projects/:id/stats", (req, res) => {
  * de cas de tests normalisés en Given/When/Then via l'IA.
  * Sans clé IA : retourne les lignes brutes sans normalisation.
  */
-app.post("/api/projects/:id/import-excel", (req, res) => {
+app.post("/api/projects/:id/import-excel", requireAuth, (req, res) => {
   const projectId = req.params.id;
 
   // Le corps peut être Buffer (raw) ou { base64: "..." } (json)
@@ -622,7 +622,7 @@ app.post("/api/projects/:id/import-excel", (req, res) => {
  * POST /api/projects/:id/campaigns  — Enregistre une campagne terminée
  * Body: { name, type, started_at, finished_at, total, pass, fail, blocked, skipped, results[] }
  */
-app.post("/api/projects/:id/campaigns", (req, res) => {
+app.post("/api/projects/:id/campaigns", requireAuth, (req, res) => {
   const projectId = req.params.id;
   const { name, type, started_at, finished_at, total, pass, fail, blocked, skipped, results } = req.body;
 
@@ -639,26 +639,38 @@ app.post("/api/projects/:id/campaigns", (req, res) => {
 /**
  * GET /api/projects/:id/campaigns  — Liste toutes les campagnes d'un projet
  */
-app.get("/api/projects/:id/campaigns", (req, res) => {
+app.get("/api/projects/:id/campaigns", requireAuth, (req, res) => {
   db.all(`
     SELECT id, project_id, name, type, started_at, finished_at,
            total, pass, fail, blocked, skipped,
            CASE WHEN total > 0 THEN ROUND(pass * 100.0 / total, 1) ELSE 0 END as success_rate,
            CASE WHEN total > 0 THEN ROUND((fail + blocked) * 100.0 / total, 1) ELSE 0 END as leak_rate,
-           CAST((strftime('%s', finished_at) - strftime('%s', started_at)) AS INTEGER) as duration_sec
+           CAST((strftime('%s', finished_at) - strftime('%s', started_at)) AS INTEGER) as duration_sec,
+           results_json
     FROM campaigns
     WHERE project_id = ?
     ORDER BY finished_at DESC
   `, [req.params.id], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    // Calcul tnr_count et tnr_pass depuis results_json
+    const enriched = rows.map(row => {
+      let tnr_count = 0, tnr_pass = 0;
+      try {
+        const results = JSON.parse(row.results_json || "[]");
+        tnr_count = results.filter(r => r.is_tnr).length;
+        tnr_pass  = results.filter(r => r.is_tnr && r.status === "PASS").length;
+      } catch (_) {}
+      const { results_json: _rj, ...rest } = row;
+      return { ...rest, tnr_count, tnr_pass };
+    });
+    res.json(enriched);
   });
 });
 
 /**
  * GET /api/campaigns/:id  — Détail d'une campagne avec résultats complets
  */
-app.get("/api/campaigns/:id", (req, res) => {
+app.get("/api/campaigns/:id", requireAuth, (req, res) => {
   db.get("SELECT * FROM campaigns WHERE id = ?", [req.params.id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row) return res.status(404).json({ error: "Campagne non trouvée" });
@@ -671,7 +683,7 @@ app.get("/api/campaigns/:id", (req, res) => {
 /**
  * DELETE /api/campaigns/:id  — Supprimer une campagne
  */
-app.delete("/api/campaigns/:id", (req, res) => {
+app.delete("/api/campaigns/:id", requireAuth, (req, res) => {
   db.run("DELETE FROM campaigns WHERE id = ?", [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     if (this.changes === 0) return res.status(404).json({ error: "Campagne non trouvée" });
@@ -684,7 +696,7 @@ app.delete("/api/campaigns/:id", (req, res) => {
  * Retourne la matrice exigence ↔ scénario, groupée par source_reference.
  * Les scénarios sans référence sont regroupés sous "Sans référence".
  */
-app.get("/api/projects/:id/coverage-matrix", (req, res) => {
+app.get("/api/projects/:id/coverage-matrix", requireAuth, (req, res) => {
   const projectId = req.params.id;
 
   db.all(`
@@ -739,7 +751,7 @@ app.get("/api/projects/:id/coverage-matrix", (req, res) => {
 /**
  * PUT /api/scenarios/:id/reference  — Mettre à jour la référence source d'un scénario
  */
-app.put("/api/scenarios/:id/reference", (req, res) => {
+app.put("/api/scenarios/:id/reference", requireAuth, (req, res) => {
   const { source_reference } = req.body;
   db.run(
     "UPDATE scenarios SET source_reference = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -753,7 +765,7 @@ app.put("/api/scenarios/:id/reference", (req, res) => {
 });
 
 
-app.get("/api/projects/:id/campaigns/kpis", (req, res) => {
+app.get("/api/projects/:id/campaigns/kpis", requireAuth, (req, res) => {
   const projectId = req.params.id;
   db.all(`
     SELECT id, name, type, started_at, finished_at, total, pass, fail, blocked, skipped,
@@ -922,7 +934,7 @@ app.post("/api/ollama/chat", async (req, res) => {
 });
 
 // POST /api/messages - Proxy Anthropic
-app.post("/api/messages", (req, res) => {
+app.post("/api/messages", requireAuth, (req, res) => {
   const apiKey = req.headers["x-api-key"] || ENV_KEY;
   if (!apiKey) {
     return res.status(401).json({ error: "Clé API manquante. Saisissez votre clé dans l'interface ou définissez ANTHROPIC_API_KEY sur le serveur." });
@@ -996,7 +1008,7 @@ function clickupRequest(method, path, apiToken, body = null) {
 /**
  * GET /api/projects/:id/clickup-config  — Config ClickUp d'un projet
  */
-app.get("/api/projects/:id/clickup-config", (req, res) => {
+app.get("/api/projects/:id/clickup-config", requireAuth, (req, res) => {
   db.get("SELECT * FROM clickup_configs WHERE project_id = ?", [req.params.id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(row || { project_id: parseInt(req.params.id), api_token: null, list_id: null, enabled: 0 });
@@ -1006,7 +1018,7 @@ app.get("/api/projects/:id/clickup-config", (req, res) => {
 /**
  * PUT /api/projects/:id/clickup-config  — Sauvegarder la config ClickUp
  */
-app.put("/api/projects/:id/clickup-config", (req, res) => {
+app.put("/api/projects/:id/clickup-config", requireAuth, (req, res) => {
   const { api_token, list_id, enabled, workspace_id, default_priority, tag_prefix } = req.body;
   db.run(`
     INSERT INTO clickup_configs (project_id, api_token, list_id, enabled, workspace_id, default_priority, tag_prefix)
@@ -1030,7 +1042,7 @@ app.put("/api/projects/:id/clickup-config", (req, res) => {
  * GET /api/clickup/lists?token=...  — Récupère les listes ClickUp accessibles
  * (utilisé pour le selecteur dans la config)
  */
-app.get("/api/clickup/lists", async (req, res) => {
+app.get("/api/clickup/lists", requireAuth, async (req, res) => {
   const token = req.query.token || req.headers["x-clickup-token"];
   if (!token) return res.status(400).json({ error: "Token ClickUp manquant" });
   try {
@@ -1067,7 +1079,7 @@ app.get("/api/clickup/lists", async (req, res) => {
  * POST /api/clickup/create-task  — Crée une tâche ClickUp pour un scénario FAIL/BLOQUÉ
  * Body : { api_token, list_id, scenario, campaign_name, status, comment, priority }
  */
-app.post("/api/clickup/create-task", async (req, res) => {
+app.post("/api/clickup/create-task", requireAuth, async (req, res) => {
   const { api_token, list_id, scenario, campaign_name, status, comment, priority, tag_prefix } = req.body;
   if (!api_token || !list_id || !scenario) {
     return res.status(400).json({ error: "api_token, list_id et scenario sont requis" });
@@ -1121,7 +1133,7 @@ app.post("/api/clickup/create-task", async (req, res) => {
  * POST /api/clickup/create-batch  — Crée plusieurs tâches ClickUp en lot
  * Body : { api_token, list_id, campaign_name, tag_prefix, items: [{ scenario, status, comment }] }
  */
-app.post("/api/clickup/create-batch", async (req, res) => {
+app.post("/api/clickup/create-batch", requireAuth, async (req, res) => {
   const { api_token, list_id, campaign_name, tag_prefix, items } = req.body;
   if (!api_token || !list_id || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "api_token, list_id et items[] sont requis" });
@@ -1184,7 +1196,7 @@ app.post("/api/clickup/create-batch", async (req, res) => {
  *  - Risques résiduels (scénarios high priority non passés)
  *  - Synthèse des campagnes
  */
-app.get("/api/projects/:id/comep-report", (req, res) => {
+app.get("/api/projects/:id/comep-report", requireAuth, (req, res) => {
   const projectId = req.params.id;
 
   // Récupérer toutes les données du projet en parallèle

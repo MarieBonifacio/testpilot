@@ -138,11 +138,15 @@ export interface CoverageMatrixRow {
 
 
 // ── P2.1 ClickUp ─────────────────────────────────────
+// Le backend stocke "api_token" — on expose "token" côté front pour lisibilité
 export interface ClickUpConfig {
-  token?: string;
+  token?: string;       // alias front de api_token
+  api_token?: string;   // champ réel backend
   list_id?: string;
   tag_prefix?: string;
   default_priority?: number;
+  enabled?: boolean;
+  workspace_id?: string;
 }
 
 export interface ClickUpList {

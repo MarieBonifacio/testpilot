@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useProject } from '../lib/hooks';
-import { scenariosApi, analysesApi } from '../lib/api';
-import type { Scenario, Analysis } from '../types';
-import { Play, CheckCircle, Download, Trash2 } from 'lucide-react';
+import { useProject, useAuth } from '../lib/hooks';
+import { scenariosApi, analysesApi, usersApi } from '../lib/api';
+import type { Scenario, Analysis, User } from '../types';
+import { Play, CheckCircle, Download, Trash2, UserCheck, ShieldCheck, XCircle, Send } from 'lucide-react';
 
 type SourceType = 'user-story' | 'spec' | 'oral' | 'rule';
 type ProviderKey = 'anthropic' | 'openai' | 'mistral' | 'ollama';
@@ -28,9 +28,9 @@ const PROVIDERS: Record<ProviderKey, ProviderConfig> = {
   anthropic: {
     label: 'Anthropic Claude',
     needsKey: true,
-    endpoint: 'https://api.anthropic.com/v1/messages',
+    endpoint: '/api/messages',   // proxy backend — la clé ne transite pas côté navigateur
     keyPlaceholder: 'sk-ant-api03-...',
-    models: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514'],
+    models: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
   },
   openai: {
     label: 'OpenAI / Azure',
@@ -59,8 +59,10 @@ const PROVIDERS: Record<ProviderKey, ProviderConfig> = {
 
 export function Redaction() {
   const { projectId, context } = useProject();
+  const { user } = useAuth();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [sourceType, setSourceType] = useState<SourceType>('user-story');
   const [sourceText, setSourceText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -76,12 +78,10 @@ export function Redaction() {
     return result;
   });
 
+  const isCP = user?.role === 'cp' || user?.role === 'admin';
+
   const loadScenarios = useCallback(async () => {
-    if (!projectId) {
-      setScenarios([]);
-      setAnalysis(null);
-      return;
-    }
+    if (!projectId) { setScenarios([]); setAnalysis(null); return; }
     try {
       const data = await scenariosApi.list(projectId);
       setScenarios(data);
@@ -92,9 +92,13 @@ export function Redaction() {
     }
   }, [projectId]);
 
+  useEffect(() => { loadScenarios(); }, [loadScenarios]);
+
+  // Charger les utilisateurs pour l'assignation (CP/admin uniquement)
   useEffect(() => {
-    loadScenarios();
-  }, [loadScenarios]);
+    if (!isCP) return;
+    usersApi.list().then(setUsers).catch(() => {});
+  }, [isCP]);
 
   useEffect(() => {
     localStorage.setItem('testpilot_provider', JSON.stringify(providerSettings));
@@ -107,15 +111,12 @@ export function Redaction() {
       oral: 'Description orale retranscrite',
       rule: 'Règle de gestion métier',
     };
-
     const ctx = context;
-    const contextBlock = (ctx?.adjacent_features || ctx?.global_constraints)
-      ? `
+    const contextBlock = (ctx?.adjacent_features || ctx?.global_constraints) ? `
 CONTEXTE DU PROJET :
 ${ctx?.adjacent_features ? `- Features adjacentes à risque : ${ctx.adjacent_features}` : ''}
 ${ctx?.global_constraints ? `- Contraintes globales : ${ctx.global_constraints}` : ''}
-`
-      : '';
+` : '';
 
     return `Tu es un expert QA senior avec 15 ans d'expérience sur des projets de transformation SI.
 Analyse la source suivante et génère des scénarios de tests structurés, précis et exploitables directement en campagne de recette.
@@ -136,8 +137,6 @@ INSTRUCTIONS DE GÉNÉRATION :
    - Le "given" décrit l'état initial précis et les préconditions nécessaires
    - Le "when" décrit une action unique et atomique
    - Le "then" décrit le résultat vérifiable de manière objective
-   - Les edge cases doivent couvrir : valeurs nulles/vides, limites numériques, états concurrents, rôles utilisateur distincts
-   - Les cas dégradés doivent couvrir : erreurs réseau, données incohérentes, indisponibilité de service tiers
 
 Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commentaires :
 {
@@ -168,24 +167,32 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
     if (!model) throw new Error('Aucun modèle sélectionné.');
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60_000);
+    const timeoutId = setTimeout(() => controller.abort(), 90_000);
 
     try {
       if (currentProvider === 'anthropic') {
-        const res = await fetch(settings.endpoint, {
+        // Via proxy backend /api/messages — la clé est transmise en header côté serveur
+        const auth = JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string };
+        const res = await fetch('/api/messages', {
           signal: controller.signal,
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': settings.key, 'anthropic-version': '2023-06-01' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': settings.key,
+            'anthropic-version': '2023-06-01',
+            ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+          },
           body: JSON.stringify({ model, max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }),
         });
         if (!res.ok) {
-          const e = await res.json().catch(() => ({}));
+          const e = await res.json().catch(() => ({})) as { error?: { message?: string } };
           throw new Error(e.error?.message || `Erreur Anthropic ${res.status}`);
         }
-        const data = await res.json();
-        return data.content.filter((b: { type: string }) => b.type === 'text').map((b: { text: string }) => b.text).join('');
+        const data = await res.json() as { content: { type: string; text: string }[] };
+        return data.content.filter(b => b.type === 'text').map(b => b.text).join('');
       }
 
+      // OpenAI / Mistral / Ollama — appel direct
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (provider.needsKey) headers['Authorization'] = `Bearer ${settings.key}`;
       const res = await fetch(settings.endpoint, {
@@ -195,14 +202,14 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
         body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2 }),
       });
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
+        const e = await res.json().catch(() => ({})) as { error?: { message?: string } };
         throw new Error(e.error?.message || `Erreur ${provider.label} ${res.status}`);
       }
-      const data = await res.json();
+      const data = await res.json() as { choices?: { message?: { content?: string } }[] };
       return data.choices?.[0]?.message?.content || '';
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        throw new Error('Délai dépassé — pas de réponse de l\'API après 60 secondes.');
+        throw new Error("Délai dépassé — pas de réponse de l'API après 90 secondes.");
       }
       throw err;
     } finally {
@@ -212,33 +219,28 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
 
   const generate = async () => {
     setError(null);
-    if (!projectId) {
-      setError('Veuillez sélectionner un projet.');
-      return;
-    }
-    if (!sourceText.trim()) {
-      setError('Veuillez entrer une description.');
-      return;
-    }
-
+    if (!projectId) { setError('Veuillez sélectionner un projet.'); return; }
+    if (!sourceText.trim()) { setError('Veuillez entrer une description.'); return; }
     setLoading(true);
     try {
       const raw = await callLLM(buildPrompt());
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('Réponse IA invalide — JSON introuvable.');
-      const parsed = JSON.parse(match[0]);
+      const parsed = JSON.parse(match[0]) as {
+        feature?: string; complexity?: string;
+        ambiguities?: string[]; regressionRisks?: string[];
+        scenarios?: { id?: string; title?: string; type?: string; priority?: string; given?: string; when?: string; then?: string }[];
+      };
       if (!Array.isArray(parsed.scenarios)) throw new Error('Format invalide — tableau de scénarios manquant.');
 
-      const analysisData: Omit<Analysis, 'id'> = {
-        feature_detected: parsed.feature,
-        complexity: parsed.complexity,
-        ambiguities: parsed.ambiguities || [],
-        regression_risks: parsed.regressionRisks || [],
-      };
+      await analysesApi.save(projectId, {
+        feature_detected: parsed.feature ?? '',
+        complexity: (parsed.complexity as Analysis['complexity']) ?? 'simple',
+        ambiguities: parsed.ambiguities ?? [],
+        regression_risks: parsed.regressionRisks ?? [],
+      });
 
-      await analysesApi.save(projectId, analysisData);
-
-      const scenariosData = parsed.scenarios.map((s: { id?: string; title?: string; type?: string; priority?: string; given?: string; when?: string; then?: string }, i: number) => ({
+      const scenariosData = parsed.scenarios.map((s, i) => ({
         scenario_id: s.id || `SC-${String(i + 1).padStart(3, '0')}`,
         title: s.title || '',
         scenario_type: (s.type as Scenario['scenario_type']) || 'functional',
@@ -260,73 +262,28 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
     }
   };
 
-  const toggleAccept = async (scenario: Scenario) => {
-    if (!scenario.id) return;
-    try {
-      await scenariosApi.toggleAccept(scenario.id);
-      await loadScenarios();
-    } catch (err) {
-      setError('Erreur: ' + (err as Error).message);
-    }
-  };
+  const toggleAccept   = async (sc: Scenario) => { if (!sc.id) return; await scenariosApi.toggleAccept(sc.id); await loadScenarios(); };
+  const toggleTNR      = async (sc: Scenario) => { if (!sc.id) return; await scenariosApi.toggleTNR(sc.id);    await loadScenarios(); };
+  const deleteScenario = async (sc: Scenario) => { if (!sc.id || !confirm('Supprimer ce scénario ?')) return;  await scenariosApi.delete(sc.id); await loadScenarios(); };
+  const acceptAll      = async () => { if (!projectId) return; await scenariosApi.acceptAll(projectId); await loadScenarios(); };
+  const clearAll       = async () => { if (!projectId || !confirm('Effacer tous les scénarios de ce projet ?')) return; await scenariosApi.deleteAll(projectId); await loadScenarios(); };
 
-  const toggleTNR = async (scenario: Scenario) => {
-    if (!scenario.id) return;
-    try {
-      await scenariosApi.toggleTNR(scenario.id);
-      await loadScenarios();
-    } catch (err) {
-      setError('Erreur: ' + (err as Error).message);
-    }
-  };
-
-  const deleteScenario = async (scenario: Scenario) => {
-    if (!scenario.id || !confirm('Supprimer ce scénario ?')) return;
-    try {
-      await scenariosApi.delete(scenario.id);
-      await loadScenarios();
-    } catch (err) {
-      setError('Erreur: ' + (err as Error).message);
-    }
-  };
-
-  const acceptAll = async () => {
-    if (!projectId) return;
-    try {
-      await scenariosApi.acceptAll(projectId);
-      await loadScenarios();
-    } catch (err) {
-      setError('Erreur: ' + (err as Error).message);
-    }
-  };
-
-  const clearAll = async () => {
-    if (!projectId || !confirm('Effacer tous les scénarios de ce projet ?')) return;
-    try {
-      await scenariosApi.deleteAll(projectId);
-      await loadScenarios();
-    } catch (err) {
-      setError('Erreur: ' + (err as Error).message);
-    }
-  };
+  const submitScenario   = async (sc: Scenario) => { if (!sc.id) return; try { await scenariosApi.submit(sc.id);              await loadScenarios(); } catch (e) { setError((e as Error).message); } };
+  const validateScenario = async (sc: Scenario) => { if (!sc.id) return; try { await scenariosApi.validate(sc.id);            await loadScenarios(); } catch (e) { setError((e as Error).message); } };
+  const rejectScenario   = async (sc: Scenario, reason: string) => { if (!sc.id) return; try { await scenariosApi.reject(sc.id, reason); await loadScenarios(); } catch (e) { setError((e as Error).message); } };
+  const assignScenario   = async (sc: Scenario, userId: number | null) => { if (!sc.id) return; try { await scenariosApi.assign(sc.id, userId); await loadScenarios(); } catch (e) { setError((e as Error).message); } };
 
   const exportJSON = () => {
-    const accepted = scenarios.filter((s) => s.accepted);
-    if (!accepted.length) {
-      setError('Aucun scénario accepté.');
-      return;
-    }
-    const data = JSON.stringify(accepted, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const accepted = scenarios.filter(s => s.accepted);
+    if (!accepted.length) { setError('Aucun scénario accepté.'); return; }
+    const blob = new Blob([JSON.stringify(accepted, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    const a = document.createElement('a'); a.href = url;
     a.download = `testpilot-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.click(); URL.revokeObjectURL(url);
   };
 
-  const acceptedCount = scenarios.filter((s) => s.accepted).length;
+  const acceptedCount = scenarios.filter(s => s.accepted).length;
 
   return (
     <div>
@@ -347,84 +304,53 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
         <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Modèle IA</div>
         <div className="flex flex-wrap gap-2 mb-4">
           {Object.entries(PROVIDERS).map(([id, cfg]) => (
-            <button
-              key={id}
-              onClick={() => setCurrentProvider(id as ProviderKey)}
+            <button key={id} onClick={() => setCurrentProvider(id as ProviderKey)}
               className="px-3 py-1.5 rounded text-sm font-semibold cursor-pointer flex items-center gap-1.5 transition-all"
               style={currentProvider === id
                 ? { border: '1px solid var(--accent)', background: 'var(--accent-bg)', color: 'var(--accent)' }
-                : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
-              }
-            >
+                : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }}>
               <span className="w-2 h-2 rounded-full" style={{ background: currentProvider === id ? 'var(--accent)' : 'var(--border)' }} />
               {cfg.label}
-              {cfg.offline && (
-                <span className="text-[0.65rem] font-bold px-1.5 rounded ml-1" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>offline</span>
-              )}
+              {cfg.offline && <span className="text-[0.65rem] font-bold px-1.5 rounded ml-1" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>offline</span>}
             </button>
           ))}
         </div>
-        <ProviderFields provider={currentProvider} settings={providerSettings[currentProvider]} onChange={(s) => setProviderSettings({ ...providerSettings, [currentProvider]: s })} />
+        <ProviderFields provider={currentProvider} settings={providerSettings[currentProvider]}
+          onChange={s => setProviderSettings({ ...providerSettings, [currentProvider]: s })} />
       </div>
 
       {/* Source */}
       <div className="panel">
         <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Source</div>
         <div className="flex flex-wrap gap-2 mb-3">
-          {(['user-story', 'spec', 'oral', 'rule'] as SourceType[]).map((type) => (
-            <label
-              key={type}
+          {(['user-story', 'spec', 'oral', 'rule'] as SourceType[]).map(type => (
+            <label key={type}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-all text-sm font-medium"
               style={sourceType === type
                 ? { border: '1px solid var(--accent)', background: 'var(--accent-bg)', color: 'var(--accent)' }
-                : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
-              }
-            >
+                : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }}>
               <input type="radio" name="sourceType" value={type} checked={sourceType === type} onChange={() => setSourceType(type)} className="hidden" />
-              {type === 'user-story' && 'User Story'}
-              {type === 'spec' && 'Spécification'}
-              {type === 'oral' && 'Description orale'}
-              {type === 'rule' && 'Règle de gestion'}
+              {type === 'user-story' && 'User Story'}{type === 'spec' && 'Spécification'}
+              {type === 'oral' && 'Description orale'}{type === 'rule' && 'Règle de gestion'}
             </label>
           ))}
         </div>
-        <textarea
-          className="w-full rounded text-sm resize-y min-h-[140px]"
+        <textarea className="w-full rounded text-sm resize-y min-h-[140px]"
           placeholder="Colle ici ta user story, ta spec ou ta description fonctionnelle…"
-          value={sourceText}
-          onChange={(e) => setSourceText(e.target.value)}
-        />
+          value={sourceText} onChange={e => setSourceText(e.target.value)} />
       </div>
 
       <div className="flex flex-wrap gap-2.5 mb-6">
-        <button className="btn btn-primary" onClick={generate} disabled={loading || !projectId}>
-          <Play size={15} />
-          Analyser et générer
-        </button>
-        <button className="btn btn-success" onClick={acceptAll} disabled={!projectId || scenarios.length === 0 || acceptedCount === scenarios.length}>
-          <CheckCircle size={15} />
-          Tout accepter
-        </button>
-        <button className="btn btn-secondary" onClick={exportJSON} disabled={acceptedCount === 0}>
-          <Download size={15} />
-          Exporter JSON
-        </button>
-        <button className="btn btn-secondary" onClick={clearAll} disabled={!projectId || scenarios.length === 0}>
-          <Trash2 size={15} />
-          Effacer tout
-        </button>
+        <button className="btn btn-primary" onClick={generate} disabled={loading || !projectId}><Play size={15} />Analyser et générer</button>
+        <button className="btn btn-success" onClick={acceptAll} disabled={!projectId || scenarios.length === 0 || acceptedCount === scenarios.length}><CheckCircle size={15} />Tout accepter</button>
+        <button className="btn btn-secondary" onClick={exportJSON} disabled={acceptedCount === 0}><Download size={15} />Exporter JSON</button>
+        <button className="btn btn-secondary" onClick={clearAll} disabled={!projectId || scenarios.length === 0}><Trash2 size={15} />Effacer tout</button>
       </div>
 
-      {loading && (
-        <div className="loader">
-          <div className="spinner" />
-          <span>Analyse en cours…</span>
-        </div>
-      )}
-
+      {loading && <div className="loader"><div className="spinner" /><span>Analyse en cours…</span></div>}
       {error && <div className="error-msg">{error}</div>}
 
-      {/* Analysis */}
+      {/* Analyse */}
       {analysis && (
         <div className="panel">
           <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>Analyse de la source</div>
@@ -436,14 +362,10 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
             <div className="rounded px-3 py-2" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)' }}>
               <div className="text-[0.72rem] mb-1" style={{ color: 'var(--text-muted)' }}>Complexité estimée</div>
               <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold" style={
-                analysis.complexity === 'simple'
-                  ? { background: 'var(--success-bg)', color: 'var(--success)' }
-                  : analysis.complexity === 'moyenne'
-                  ? { background: 'var(--warning-bg)', color: 'var(--warning)' }
-                  : { background: 'var(--danger-bg)', color: 'var(--danger)' }
-              }>
-                {analysis.complexity}
-              </span>
+                analysis.complexity === 'simple' ? { background: 'var(--success-bg)', color: 'var(--success)' }
+                : analysis.complexity === 'moyenne' ? { background: 'var(--warning-bg)', color: 'var(--warning)' }
+                : { background: 'var(--danger-bg)', color: 'var(--danger)' }
+              }>{analysis.complexity}</span>
             </div>
             <div className="rounded px-3 py-2" style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)' }}>
               <div className="text-[0.72rem] mb-1" style={{ color: 'var(--text-muted)' }}>Ambiguïtés</div>
@@ -453,23 +375,18 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
           {analysis.ambiguities?.length > 0 && (
             <div className="callout callout-amber">
               <div className="text-xs font-bold mb-1">Préconditions ambiguës</div>
-              <ul className="text-[0.83rem] m-0 pl-4">
-                {analysis.ambiguities.map((a, i) => <li key={i}>{a}</li>)}
-              </ul>
+              <ul className="text-[0.83rem] m-0 pl-4">{analysis.ambiguities.map((a, i) => <li key={i}>{a}</li>)}</ul>
             </div>
           )}
           {analysis.regression_risks?.length > 0 && (
             <div className="callout callout-purple mt-2">
               <div className="text-xs font-bold mb-1">Risques de régression</div>
-              <ul className="text-[0.83rem] m-0 pl-4">
-                {analysis.regression_risks.map((r, i) => <li key={i}>{r}</li>)}
-              </ul>
+              <ul className="text-[0.83rem] m-0 pl-4">{analysis.regression_risks.map((r, i) => <li key={i}>{r}</li>)}</ul>
             </div>
           )}
         </div>
       )}
 
-      {/* Results */}
       {scenarios.length > 0 && (
         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
           <h2 className="text-base font-bold">Scénarios générés</h2>
@@ -479,13 +396,12 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
 
       <div className="space-y-4">
         {scenarios.map((sc, i) => (
-          <ScenarioCard
-            key={sc.id || i}
-            scenario={sc}
-            onToggleAccept={() => toggleAccept(sc)}
-            onToggleTNR={() => toggleTNR(sc)}
-            onDelete={() => deleteScenario(sc)}
-          />
+          <ScenarioCard key={sc.id || i} scenario={sc} users={users} isCP={isCP}
+            onToggleAccept={() => toggleAccept(sc)} onToggleTNR={() => toggleTNR(sc)}
+            onDelete={() => deleteScenario(sc)} onSubmit={() => submitScenario(sc)}
+            onValidate={() => validateScenario(sc)}
+            onReject={reason => rejectScenario(sc, reason)}
+            onAssign={userId => assignScenario(sc, userId)} />
         ))}
       </div>
 
@@ -499,115 +415,199 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
   );
 }
 
+// ── ProviderFields ────────────────────────────────────────────────────────────
 function ProviderFields({ provider, settings, onChange }: { provider: ProviderKey; settings: ProviderSettings; onChange: (s: ProviderSettings) => void }) {
   const cfg = PROVIDERS[provider];
-
   return (
     <div className="space-y-3">
       {cfg.needsKey && (
         <div>
           <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Clé API</div>
-          <input
-            type="password"
-            placeholder={cfg.keyPlaceholder}
-            value={settings.key}
-            onChange={(e) => onChange({ ...settings, key: e.target.value })}
-          />
+          <input type="password" placeholder={cfg.keyPlaceholder} value={settings.key}
+            onChange={e => onChange({ ...settings, key: e.target.value })} />
+          {provider === 'anthropic' && (
+            <p className="text-[0.7rem] mt-1" style={{ color: 'var(--text-dim)' }}>
+              La clé transite via le proxy backend — elle n'est pas exposée dans le réseau navigateur.
+            </p>
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Modèle</div>
-          <select value={settings.model} onChange={(e) => onChange({ ...settings, model: e.target.value })}>
-            {cfg.models.map((m) => <option key={m} value={m}>{m}</option>)}
+          <select value={settings.model} onChange={e => onChange({ ...settings, model: e.target.value })}>
+            {cfg.models.map(m => <option key={m} value={m}>{m}</option>)}
             <option value="__custom__">Autre (saisir)…</option>
           </select>
           {settings.model === '__custom__' && (
-            <input
-              type="text"
-              className="mt-2"
-              placeholder="ex : llama3.2:latest"
-              value={settings.modelCustom || ''}
-              onChange={(e) => onChange({ ...settings, modelCustom: e.target.value })}
-            />
+            <input type="text" className="mt-2" placeholder="ex : llama3.2:latest"
+              value={settings.modelCustom || ''} onChange={e => onChange({ ...settings, modelCustom: e.target.value })} />
           )}
         </div>
         {cfg.endpointEditable && (
           <div>
             <div className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Endpoint URL</div>
-            <input
-              type="text"
-              value={settings.endpoint}
-              onChange={(e) => onChange({ ...settings, endpoint: e.target.value })}
-            />
+            <input type="text" value={settings.endpoint} onChange={e => onChange({ ...settings, endpoint: e.target.value })} />
           </div>
         )}
       </div>
       {cfg.offline && (
         <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          Ollama doit tourner localement — <a href="https://ollama.ai" target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>ollama.ai</a>
-          {' '}puis <code>ollama serve</code>
+          Ollama doit tourner localement — <a href="https://ollama.ai" target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>ollama.ai</a>{' '}puis <code>ollama serve</code>
         </div>
       )}
     </div>
   );
 }
 
-function ScenarioCard({ scenario, onToggleAccept, onToggleTNR, onDelete }: { scenario: Scenario; onToggleAccept: () => void; onToggleTNR: () => void; onDelete: () => void }) {
+// ── Statuts workflow ──────────────────────────────────────────────────────────
+const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  draft:     { bg: 'var(--bg-hover)',    color: 'var(--text-dim)', label: 'Brouillon' },
+  submitted: { bg: 'var(--warning-bg)', color: 'var(--warning)',   label: 'Soumis' },
+  validated: { bg: 'var(--success-bg)', color: 'var(--success)',   label: 'Validé' },
+  rejected:  { bg: 'var(--danger-bg)',  color: 'var(--danger)',    label: 'Rejeté' },
+};
+
+// ── ScenarioCard ──────────────────────────────────────────────────────────────
+function ScenarioCard({
+  scenario, users, isCP,
+  onToggleAccept, onToggleTNR, onDelete,
+  onSubmit, onValidate, onReject, onAssign,
+}: {
+  scenario: Scenario;
+  users: User[];
+  isCP: boolean;
+  onToggleAccept: () => void;
+  onToggleTNR: () => void;
+  onDelete: () => void;
+  onSubmit: () => void;
+  onValidate: () => void;
+  onReject: (reason: string) => void;
+  onAssign: (userId: number | null) => void;
+}) {
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const status = scenario.validation_status ?? 'draft';
+  const style = STATUS_STYLE[status] ?? STATUS_STYLE.draft;
+
+  const handleReject = () => {
+    onReject(rejectReason.trim());
+    setRejectOpen(false);
+    setRejectReason('');
+  };
+
   return (
     <div className={`scenario-card ${scenario.accepted ? 'accepted' : ''}`}>
+      {/* En-tête */}
       <div className="flex justify-between items-start mb-3 gap-3 flex-wrap">
-        <div>
+        <div className="flex-1 min-w-0">
           <div className="text-[0.72rem] mb-0.5" style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-dim)' }}>{scenario.scenario_id}</div>
           <div className="font-semibold text-sm">{scenario.title}</div>
+          {scenario.assignee_name && (
+            <div className="text-[0.68rem] mt-0.5" style={{ color: 'var(--text-dim)' }}>
+              Assigné à : <strong>{scenario.assignee_name}</strong>
+            </div>
+          )}
         </div>
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap flex-shrink-0 items-center">
           <span className={`badge badge-type ${scenario.scenario_type}`}>{scenario.scenario_type}</span>
           <span className={`badge badge-priority ${scenario.priority}`}>{scenario.priority}</span>
           {scenario.is_tnr && <span className="badge-tnr">TNR</span>}
+          <span className="text-[0.67rem] px-1.5 py-0.5 rounded font-semibold"
+            style={{ background: style.bg, color: style.color }}>{style.label}</span>
         </div>
       </div>
-      <div className="mb-2">
-        <div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>Given</div>
-        <div className="text-sm">{scenario.given_text}</div>
-      </div>
-      <div className="mb-2">
-        <div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>When</div>
-        <div className="text-sm">{scenario.when_text}</div>
-      </div>
-      <div className="mb-3">
-        <div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>Then</div>
-        <div className="text-sm">{scenario.then_text}</div>
-      </div>
-      <div className="flex gap-1.5 pt-3 flex-wrap" style={{ borderTop: '1px solid var(--border)' }}>
-        <button
-          className="px-3 py-1 text-xs font-semibold rounded cursor-pointer transition-all"
+
+      {/* Given / When / Then */}
+      <div className="mb-2"><div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>Given</div><div className="text-sm">{scenario.given_text}</div></div>
+      <div className="mb-2"><div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>When</div><div className="text-sm">{scenario.when_text}</div></div>
+      <div className="mb-3"><div className="text-[0.72rem] font-bold uppercase mb-0.5" style={{ color: 'var(--text-dim)' }}>Then</div><div className="text-sm">{scenario.then_text}</div></div>
+
+      {/* Raison de rejet */}
+      {status === 'rejected' && (scenario as Scenario & { rejection_reason?: string }).rejection_reason && (
+        <div className="mb-3 px-3 py-2 rounded text-xs" style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)', color: 'var(--danger)' }}>
+          Rejet : {(scenario as Scenario & { rejection_reason?: string }).rejection_reason}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-1.5 pt-3 flex-wrap items-center" style={{ borderTop: '1px solid var(--border)' }}>
+        {/* Accepter / TNR */}
+        <button className="px-3 py-1 text-xs font-semibold rounded cursor-pointer transition-all"
           style={scenario.accepted
             ? { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
-            : { border: '1px solid var(--success)', background: 'var(--success-bg)', color: 'var(--success)' }
-          }
-          onClick={onToggleAccept}
-        >
+            : { border: '1px solid var(--success)', background: 'var(--success-bg)', color: 'var(--success)' }}
+          onClick={onToggleAccept}>
           {scenario.accepted ? '✓ Accepté — Retirer' : 'Accepter'}
         </button>
-        <button
-          className="px-2 py-1 text-xs font-semibold rounded cursor-pointer transition-all"
+        <button className="px-2 py-1 text-xs font-semibold rounded cursor-pointer transition-all"
           style={scenario.is_tnr
             ? { border: '1px solid var(--purple)', background: 'var(--purple-bg)', color: 'var(--purple)' }
-            : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }
-          }
-          onClick={onToggleTNR}
-        >
-          TNR
-        </button>
-        <button
-          className="px-2 py-1 text-xs font-semibold rounded cursor-pointer transition-all ml-auto"
-          style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger)' }}
-          onClick={onDelete}
-        >
-          Supprimer
-        </button>
+            : { border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' }}
+          onClick={onToggleTNR}>TNR</button>
+
+        {/* Soumettre (brouillon ou rejeté → tous les rôles) */}
+        {(status === 'draft' || status === 'rejected') && (
+          <button className="flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded cursor-pointer"
+            style={{ border: '1px solid var(--warning)', background: 'var(--warning-bg)', color: 'var(--warning)' }}
+            onClick={onSubmit}>
+            <Send size={11} /> Soumettre
+          </button>
+        )}
+
+        {/* Valider / Rejeter (CP/admin si soumis) */}
+        {isCP && status === 'submitted' && (
+          <>
+            <button className="flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded cursor-pointer"
+              style={{ border: '1px solid var(--success)', background: 'var(--success-bg)', color: 'var(--success)' }}
+              onClick={onValidate}>
+              <ShieldCheck size={11} /> Valider
+            </button>
+            <button className="flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded cursor-pointer"
+              style={{ border: '1px solid var(--danger)', background: 'var(--danger-bg)', color: 'var(--danger)' }}
+              onClick={() => setRejectOpen(r => !r)}>
+              <XCircle size={11} /> Rejeter
+            </button>
+          </>
+        )}
+
+        {/* Assignation (CP/admin) */}
+        {isCP && (
+          <div className="flex items-center gap-1 ml-auto">
+            <UserCheck size={12} style={{ color: 'var(--text-dim)' }} />
+            <select className="text-xs rounded"
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '2px 6px' }}
+              value={scenario.assigned_to ?? ''}
+              onChange={e => onAssign(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Non assigné</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.display_name} ({u.role})</option>)}
+            </select>
+          </div>
+        )}
+
+        <button className="px-2 py-1 text-xs font-semibold rounded cursor-pointer"
+          style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger)', marginLeft: isCP ? 0 : 'auto' }}
+          onClick={onDelete}>Supprimer</button>
       </div>
+
+      {/* Zone rejet */}
+      {rejectOpen && (
+        <div className="mt-3 pt-3 space-y-2" style={{ borderTop: '1px solid var(--border)' }}>
+          <textarea className="w-full text-xs rounded resize-none" rows={2}
+            placeholder="Raison du rejet (optionnel)…" value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            style={{ background: 'var(--bg)', border: '1px solid var(--danger)', padding: '6px 8px', color: 'var(--text)' }} />
+          <div className="flex gap-2">
+            <button className="px-3 py-1 text-xs font-semibold rounded"
+              style={{ background: 'var(--danger)', color: 'var(--bg)', border: 'none', cursor: 'pointer' }}
+              onClick={handleReject}>Confirmer le rejet</button>
+            <button className="px-3 py-1 text-xs font-semibold rounded"
+              style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer' }}
+              onClick={() => setRejectOpen(false)}>Annuler</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
