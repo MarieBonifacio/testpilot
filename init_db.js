@@ -158,7 +158,37 @@ const db = new sqlite3.Database(dbPath, (err) => {
             tnr_target_minutes INTEGER,
             updated_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
-          )`
+          )`,
+          // P5.1 : Tokens API pour intégration CI/CD
+          `CREATE TABLE IF NOT EXISTS api_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            token_prefix TEXT NOT NULL,
+            scopes TEXT DEFAULT '["trigger"]',
+            project_ids TEXT,
+            last_used_at TEXT,
+            expires_at TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_api_tokens_user   ON api_tokens(user_id)`,
+          `CREATE INDEX IF NOT EXISTS idx_api_tokens_prefix ON api_tokens(token_prefix)`,
+          // P5.1 : Traçabilité des déclenchements CI/CD
+          `CREATE TABLE IF NOT EXISTS triggered_executions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            api_token_id INTEGER,
+            trigger_source TEXT,
+            commit_sha TEXT,
+            branch TEXT,
+            pipeline_url TEXT,
+            triggered_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (session_id) REFERENCES test_sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE SET NULL
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_triggered_exec_session ON triggered_executions(session_id)`
         ];
 
         let pending = migrations.length;

@@ -13,11 +13,13 @@ import { Comep } from './pages/Comep';
 import { Login } from './pages/Login';
 import { Users } from './pages/Users';
 import { ProductionBugs } from './pages/ProductionBugs';
+import { ApiTokens } from './pages/ApiTokens';
+import { CiCdDocs } from './pages/CiCdDocs';
 import { ProjectSelector } from './components/ProjectSelector';
 import { NotificationBell } from './components/NotificationBell';
 import {
   Plane, Sun, Moon, LogOut, FileSpreadsheet,
-  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug,
+  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug, Key, BookOpen,
 } from 'lucide-react';
 
 // ── Garde de route ─────────────────────────────────────
@@ -89,6 +91,12 @@ function Navigation() {
         </NavLink>
         <NavLink to="/production-bugs" className={navLinkClass}>
           <span className="flex items-center gap-1"><Bug size={13} />Fuites prod.</span>
+        </NavLink>
+        <NavLink to="/api-tokens" className={navLinkClass}>
+          <span className="flex items-center gap-1"><Key size={13} />API Tokens</span>
+        </NavLink>
+        <NavLink to="/cicd-docs" className={navLinkClass}>
+          <span className="flex items-center gap-1"><BookOpen size={13} />CI/CD</span>
         </NavLink>
         <NavLink to="/export"        className={navLinkClass}>Export</NavLink>
         {(user?.role === 'cp' || user?.role === 'admin') && (
@@ -167,6 +175,8 @@ export default function App() {
                     <Route path="/comep"       element={<Comep />} />
                     <Route path="/export"      element={<Export />} />
                     <Route path="/production-bugs" element={<ProductionBugs />} />
+                    <Route path="/api-tokens" element={<ApiTokens />} />
+                    <Route path="/cicd-docs" element={<CiCdDocs />} />
                     <Route path="/users"       element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
                     <Route path="*"            element={<Navigate to="/" replace />} />
                   </Routes>

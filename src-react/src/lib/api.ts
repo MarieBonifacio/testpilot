@@ -10,6 +10,7 @@ import type {
   Notification,
   ProductionBug, LeakRateKPI, ProductionBugListResponse,
   TnrDurationKPI, FlakinessKPI, FlakinessHistory,
+  ApiToken, ApiTokenCreated, TriggerHistory,
 } from '../types';
 
 const BASE_URL = '';
@@ -494,4 +495,18 @@ export const kpisApi = {
     api.get<FlakinessKPI>(`/api/projects/${projectId}/kpis/flakiness`),
   getFlakinessHistory: (scenarioId: number) =>
     api.get<FlakinessHistory>(`/api/scenarios/${scenarioId}/flakiness-history`),
+};
+
+// ══════════════════════════════════════════════════════
+// P5.1 — CI/CD API Tokens
+// ══════════════════════════════════════════════════════
+export const apiTokensApi = {
+  list: () =>
+    api.get<ApiToken[]>('/api/user/api-tokens'),
+  create: (data: { name: string; scopes?: string[]; project_ids?: number[] | null; expires_in_days?: number | null }) =>
+    api.post<ApiTokenCreated>('/api/user/api-tokens', data),
+  delete: (id: number) =>
+    api.delete<{ deleted: boolean }>(`/api/user/api-tokens/${id}`),
+  triggerHistory: (limit = 50) =>
+    api.get<TriggerHistory[]>(`/api/trigger/history?limit=${limit}`),
 };

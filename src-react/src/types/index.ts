@@ -361,3 +361,36 @@ export interface FlakinessHistory {
     last_calculated: string;
   } | null;
 }
+
+// ── P5.1 CI/CD API Tokens ─────────────────────────────
+export interface ApiToken {
+  id: number;
+  name: string;
+  token_prefix: string;
+  scopes: string[];
+  project_ids: number[] | null;
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface ApiTokenCreated extends ApiToken {
+  token: string; // affiché une seule fois à la création
+  message: string;
+}
+
+export interface TriggerHistory {
+  id: number;
+  session_id: number;
+  session_name: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_seconds: number | null;
+  project_name: string;
+  token_name: string | null;
+  trigger_source: string | null;
+  commit_sha: string | null;
+  branch: string | null;
+  pipeline_url: string | null;
+  triggered_at: string;
+}
