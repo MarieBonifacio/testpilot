@@ -188,7 +188,20 @@ const db = new sqlite3.Database(dbPath, (err) => {
             FOREIGN KEY (session_id) REFERENCES test_sessions(id) ON DELETE CASCADE,
             FOREIGN KEY (api_token_id) REFERENCES api_tokens(id) ON DELETE SET NULL
           )`,
-          `CREATE INDEX IF NOT EXISTS idx_triggered_exec_session ON triggered_executions(session_id)`
+          `CREATE INDEX IF NOT EXISTS idx_triggered_exec_session ON triggered_executions(session_id)`,
+          // P6.1 : Configuration documentaire par projet
+          `CREATE TABLE IF NOT EXISTS project_doc_config (
+            project_id INTEGER PRIMARY KEY,
+            filiale TEXT DEFAULT 'cmt-groupe',
+            company_name TEXT,
+            company_address TEXT,
+            company_postal_code TEXT,
+            company_city TEXT,
+            company_email TEXT,
+            logo_base64 TEXT,
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+          )`
         ];
 
         let pending = migrations.length;

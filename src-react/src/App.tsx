@@ -15,11 +15,12 @@ import { Users } from './pages/Users';
 import { ProductionBugs } from './pages/ProductionBugs';
 import { ApiTokens } from './pages/ApiTokens';
 import { CiCdDocs } from './pages/CiCdDocs';
+import { ProjectSettings } from './pages/ProjectSettings';
 import { ProjectSelector } from './components/ProjectSelector';
 import { NotificationBell } from './components/NotificationBell';
 import {
   Plane, Sun, Moon, LogOut, FileSpreadsheet,
-  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug, Key, BookOpen,
+  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug, Key, BookOpen, Settings,
 } from 'lucide-react';
 
 // ── Garde de route ─────────────────────────────────────
@@ -97,6 +98,9 @@ function Navigation() {
         </NavLink>
         <NavLink to="/cicd-docs" className={navLinkClass}>
           <span className="flex items-center gap-1"><BookOpen size={13} />CI/CD</span>
+        </NavLink>
+        <NavLink to="/settings" className={navLinkClass}>
+          <span className="flex items-center gap-1"><Settings size={13} />Paramètres</span>
         </NavLink>
         <NavLink to="/export"        className={navLinkClass}>Export</NavLink>
         {(user?.role === 'cp' || user?.role === 'admin') && (
@@ -177,6 +181,7 @@ export default function App() {
                     <Route path="/production-bugs" element={<ProductionBugs />} />
                     <Route path="/api-tokens" element={<ApiTokens />} />
                     <Route path="/cicd-docs" element={<CiCdDocs />} />
+                    <Route path="/settings" element={<ProjectSettings />} />
                     <Route path="/users"       element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
                     <Route path="*"            element={<Navigate to="/" replace />} />
                   </Routes>

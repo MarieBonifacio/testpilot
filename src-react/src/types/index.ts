@@ -394,3 +394,16 @@ export interface TriggerHistory {
   pipeline_url: string | null;
   triggered_at: string;
 }
+
+// ── P6 Export documentaire ────────────────────────────
+export interface ProjectDocConfig {
+  project_id: number;
+  filiale: string;
+  company_name: string | null;
+  company_address: string | null;
+  company_postal_code: string | null;
+  company_city: string | null;
+  company_email: string | null;
+  logo_base64: string | null;
+  updated_at: string | null;
+}

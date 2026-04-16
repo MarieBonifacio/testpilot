@@ -161,58 +161,82 @@ app.get("/api/projects", requireAuth, (req, res) => {
   `, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
-  });
+    });
 });
 
-// GET /api/projects/:id - Détail d'un projet
-app.get("/api/projects/:id", requireAuth, (req, res) => {
-  db.get("SELECT * FROM projects WHERE id = ?", [req.params.id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!row) return res.status(404).json({ error: "Projet non trouvé" });
-    res.json(row);
-  });
-});
-
-// POST /api/projects - Créer un projet
-app.post("/api/projects", requireAuth, (req, res) => {
-  const { name, tech_stack, business_domain, description } = req.body;
-  if (!name) return res.status(400).json({ error: "Le nom du projet est requis" });
+// GET /api/campaigns/:id/export-rapport — exporter le rapport d'une campagne archivée
+app.get('/api/campaigns/:id/export-rapport', requireAuth, async (req, res) => {
+  const campaignId = parseInt(req.params.id);
   
-  db.run(
-    "INSERT INTO projects (name, tech_stack, business_domain, description) VALUES (?, ?, ?, ?)",
-    [name, tech_stack, business_domain, description],
-    function(err) {
-      if (err) {
-        if (err.message.includes("UNIQUE")) {
-          return res.status(409).json({ error: "Un projet avec ce nom existe déjà" });
-        }
-        return res.status(500).json({ error: err.message });
-      }
-      res.status(201).json({ id: this.lastID, name, tech_stack, business_domain, description });
-    }
-  );
-});
-
-// PUT /api/projects/:id - Modifier un projet
-app.put("/api/projects/:id", requireAuth, (req, res) => {
-  const { name, tech_stack, business_domain, description } = req.body;
-  db.run(
-    "UPDATE projects SET name = ?, tech_stack = ?, business_domain = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-    [name, tech_stack, business_domain, description, req.params.id],
-    function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      if (this.changes === 0) return res.status(404).json({ error: "Projet non trouvé" });
-      res.json({ id: parseInt(req.params.id), name, tech_stack, business_domain, description });
-    }
-  );
-});
-
-// DELETE /api/projects/:id - Supprimer un projet
-app.delete("/api/projects/:id", requireAuth, (req, res) => {
-  db.run("DELETE FROM projects WHERE id = ?", [req.params.id], function(err) {
+  db.get('SELECT * FROM campaigns WHERE id = ?', [campaignId], (err, campaign) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (this.changes === 0) return res.status(404).json({ error: "Projet non trouvé" });
-    res.json({ deleted: true });
+    if (!campaign) return res.status(404).json({ error: 'Campagne non trouvée' });
+    
+    // Parser les résultats si besoin
+    let results = [];
+    try {
+      results = typeof campaign.results_json === 'string' ? JSON.parse(campaign.results_json) : (campaign.results_json || []);
+    } catch { results = []; }
+    
+    const docConfig = {};
+    db.get('SELECT * FROM project_doc_config WHERE project_id = ?', [campaign.project_id], (err2, cfg) => {
+      if (!err2 && cfg) Object.assign(docConfig, cfg);
+      
+      // Générer le document avec le template
+      const templateVars = {
+        documentType: 'rapport-campagne',
+        projectTitle: `Rapport de campagne — ${campaign.name || campaignId}`,
+        projectReference: campaign.type === 'TNR' ? 'TNR' : 'Complet',
+        generationDate: new Date(campaign.finished_at || campaign.created_at).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' }),
+        companyName: docConfig.company_name || 'CMT',
+        companyAddress: docConfig.company_address,
+        companyPostalCode: docConfig.company_postal_code,
+        companyCity: docConfig.company_city,
+        filiale: docConfig.filiale || 'cmt-groupe',
+        sections: [
+          {
+            level: 2,
+            title: 'Synthèse',
+            content: `
+Campagne réalisée le ${new Date(campaign.finished_at || campaign.started_at || Date.now()).toLocaleDateString('fr-FR')}
+
+**Résultats** :
+- Total : ${campaign.total}
+- Passés : ${campaign.pass} (${campaign.total > 0 ? Math.round(campaign.pass / campaign.total * 100) : 0}%)
+- Échecs : ${campaign.fail}
+- Bloqués : ${campaign.blocked}
+- Non exécutés : ${campaign.skipped}
+`
+          },
+          {
+            level: 2,
+            title: 'Anomalies',
+            content: results.filter(r => r.status === 'fail' || r.status === 'blocked')
+              .map(r => `- **${r.id}** : ${r.title}\n  ${r.comment || ''}`).join('\n') || 'Aucune anomalie'
+          }
+        ],
+        resultsData: [
+          [{ text: 'ID', bold: true }, { text: 'Titre', bold: true }, { text: 'Feature', bold: true }, { text: 'Statut', bold: true }],
+          ...results.map(r => [r.id, r.title, r.feature || '-', r.status.toUpperCase()])
+        ]
+      };
+      
+      // Utiliser docGenerator si disponible, sinon générer réponse simple
+      if (typeof docGenerator !== 'undefined' && docGenerator.generateRapportCampagne) {
+        docGenerator.generateRapportCampagne(campaignId, db).then(buffer => {
+          res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'Content-Disposition': `attachment; filename="rapport-campagne-${campaignId}.docx"`
+          });
+          res.send(buffer);
+        }).catch(e => {
+          console.error('Export error:', e);
+          res.status(500).json({ error: e.message });
+        });
+      } else {
+        res.status(500).json({ error: 'Module docGenerator non chargé' });
+      }
+    });
   });
 });
 
@@ -2742,6 +2766,87 @@ app.use((req, res) => {
     return res.status(404).json({ error: "Endpoint non trouvé" });
   }
   res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// ══════════════════════════════════════════════════════
+// ██  P6 — EXPORT DOCUMENTAIRE
+// ══════════════════════════════════════════════════════
+const docGenerator = require('./exports/doc-generator');
+
+// GET /api/projects/:id/export/cahier-recette
+app.get('/api/projects/:id/export/cahier-recette', requireAuth, async (req, res) => {
+  try {
+    const buffer = await docGenerator.generateCahierRecette(req.params.id, db);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="cahier-recette-${req.params.id}.docx"`
+    });
+    res.send(buffer);
+  } catch (error) {
+    console.error('Export cahier-recette error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/projects/:id/export/plan-test
+app.get('/api/projects/:id/export/plan-test', requireAuth, async (req, res) => {
+  try {
+    const buffer = await docGenerator.generatePlanTest(req.params.id, db);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="plan-test-${req.params.id}.docx"`
+    });
+    res.send(buffer);
+  } catch (error) {
+    console.error('Export plan-test error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/sessions/:id/export/rapport
+app.get('/api/sessions/:id/export/rapport', requireAuth, async (req, res) => {
+  try {
+    const buffer = await docGenerator.generateRapportCampagne(req.params.id, db);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="rapport-campagne-${req.params.id}.docx"`
+    });
+    res.send(buffer);
+  } catch (error) {
+    console.error('Export rapport-campagne error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/projects/:id/doc-config
+app.get('/api/projects/:id/doc-config', requireAuth, async (req, res) => {
+  db.get('SELECT * FROM project_doc_config WHERE project_id = ?', [req.params.id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(row || { project_id: parseInt(req.params.id), filiale: 'cmt-groupe' });
+  });
+});
+
+// PUT /api/projects/:id/doc-config
+app.put('/api/projects/:id/doc-config', requireAuth, async (req, res) => {
+  const { filiale, company_name, company_address, company_postal_code, company_city, company_email, logo_base64 } = req.body;
+  const projectId = req.params.id;
+  
+  db.run(`
+    INSERT INTO project_doc_config (project_id, filiale, company_name, company_address, company_postal_code, company_city, company_email, logo_base64, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(project_id) DO UPDATE SET
+      filiale = excluded.filiale,
+      company_name = excluded.company_name,
+      company_address = excluded.company_address,
+      company_postal_code = excluded.company_postal_code,
+      company_city = excluded.company_city,
+      company_email = excluded.company_email,
+      logo_base64 = excluded.logo_base64,
+      updated_at = datetime('now')
+  `, [projectId, filiale || 'cmt-groupe', company_name, company_address, company_postal_code, company_city, company_email, logo_base64], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ updated: true });
+  });
 });
 
 // ══════════════════════════════════════════════════════

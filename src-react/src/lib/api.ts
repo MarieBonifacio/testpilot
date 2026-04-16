@@ -11,6 +11,7 @@ import type {
   ProductionBug, LeakRateKPI, ProductionBugListResponse,
   TnrDurationKPI, FlakinessKPI, FlakinessHistory,
   ApiToken, ApiTokenCreated, TriggerHistory,
+  ProjectDocConfig,
 } from '../types';
 
 const BASE_URL = '';
@@ -495,6 +496,22 @@ export const kpisApi = {
     api.get<FlakinessKPI>(`/api/projects/${projectId}/kpis/flakiness`),
   getFlakinessHistory: (scenarioId: number) =>
     api.get<FlakinessHistory>(`/api/scenarios/${scenarioId}/flakiness-history`),
+};
+
+// ══════════════════════════════════════════════════════
+// P6 — Export documentaire
+// ══════════════════════════════════════════════════════
+export const exportApi = {
+  downloadCahierRecette: (projectId: number) =>
+    api.get<Blob>(`/api/projects/${projectId}/export/cahier-recette`),
+  downloadPlanTest: (projectId: number) =>
+    api.get<Blob>(`/api/projects/${projectId}/export/plan-test`),
+  downloadRapportCampagne: (sessionId: number) =>
+    api.get<Blob>(`/api/sessions/${sessionId}/export/rapport`),
+  getDocConfig: (projectId: number) =>
+    api.get<ProjectDocConfig>(`/api/projects/${projectId}/doc-config`),
+  saveDocConfig: (projectId: number, data: Partial<ProjectDocConfig>) =>
+    api.put<{ updated: boolean }>(`/api/projects/${projectId}/doc-config`, data),
 };
 
 // ══════════════════════════════════════════════════════

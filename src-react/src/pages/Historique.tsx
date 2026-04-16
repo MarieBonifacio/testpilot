@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useProject } from '../lib/hooks';
 import { campaignsApi } from '../lib/api';
 import type { Campaign } from '../types';
-import { History, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronRight, Calendar } from 'lucide-react';
+import { History, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronRight, Calendar, Download } from 'lucide-react';
 
 /** Normalise les noms de colonnes backend → noms front uniformes */
 function normalize(c: Campaign): Required<Pick<Campaign,
@@ -245,6 +245,29 @@ export function Historique() {
                     {c.duration_minutes != null && (
                       <span>Durée : <strong>{c.duration_minutes} min</strong></span>
                     )}
+                  </div>
+                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                    <button
+                      className="btn btn-secondary text-xs flex items-center gap-1.5"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          const res = await fetch(`/api/campaigns/${c.id}/export-rapport`, {
+                            headers: { Authorization: `Bearer ${JSON.parse(localStorage.getItem('testpilot_auth') || '{}').token}` }
+                          });
+                          if (!res.ok) throw new Error('Export failed');
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `rapport-${c.id}.docx`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        } catch { /* ignore */ }
+                      }}
+                    >
+                      <Download size={12} /> Télécharger le rapport
+                    </button>
                   </div>
                 </div>
               )}

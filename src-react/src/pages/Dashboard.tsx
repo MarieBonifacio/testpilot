@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useProject } from '../lib/hooks';
 import { projectsApi, scenariosApi, campaignsApi, productionBugsApi, kpisApi } from '../lib/api';
 import type { Scenario, LeakRateKPI, TnrDurationKPI, FlakinessKPI } from '../types';
-import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus, Bug, Timer, Activity } from 'lucide-react';
+import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus, Bug, Timer, Activity, Download } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { formatDuration } from '../lib/duration';
 
@@ -140,11 +140,33 @@ export function Dashboard() {
     return { background: 'var(--success-bg)', color: 'var(--success)' };
   };
 
+  const downloadCahierRecette = async () => {
+    if (!projectId) return;
+    try {
+      const blob = await fetch(`/api/projects/${projectId}/export/cahier-recette`, {
+        headers: { Authorization: `Bearer ${JSON.parse(localStorage.getItem('testpilot_auth') || '{}').token}` }
+      }).then(r => r.blob());
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cahier-recette-${projectId}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
+  };
+
   return (
     <div>
-      <header className="mb-6 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>Dashboard</h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Vue d'ensemble des scénarios de test</p>
+      <header className="mb-6 pb-4 flex justify-between items-start flex-wrap gap-3" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>Dashboard</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Vue d'ensemble des scénarios de test</p>
+        </div>
+        {projectId && (
+          <button className="btn btn-secondary flex items-center gap-2" onClick={downloadCahierRecette}>
+            <Download size={14} /> Exporter cahier de recette
+          </button>
+        )}
       </header>
 
       {/* Metrics */}
