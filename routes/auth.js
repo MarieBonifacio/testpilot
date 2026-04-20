@@ -1,6 +1,28 @@
 "use strict";
 
-const express = require("express");
+const express  = require("express");
+const bcrypt   = require("bcryptjs");
+const crypto   = require("crypto");
+const validate = require("../middleware/validate");
+const audit    = require("../middleware/audit");
+
+const BCRYPT_ROUNDS = 10;
+
+/** Détecte si un hash est en SHA-256 (64 hex chars) — legacy */
+function isSha256Hash(hash) {
+  return typeof hash === "string" && /^[0-9a-f]{64}$/i.test(hash);
+}
+
+/** Vérifie le mot de passe en supportant SHA-256 legacy et bcrypt */
+function verifyPassword(plaintext, storedHash) {
+  if (isSha256Hash(storedHash)) {
+    // Legacy SHA-256 — comparaison directe
+    const sha256 = crypto.createHash("sha256").update(plaintext).digest("hex");
+    return sha256 === storedHash;
+  }
+  // bcrypt
+  return bcrypt.compareSync(plaintext, storedHash);
+}
 
 /**
  * @param {object}   db              - connexion SQLite3
@@ -15,11 +37,9 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
   // ── POST /api/auth/register ───────────────────────────
   // Premier lancement : si aucun user en BDD, création libre (bootstrap admin)
   // Ensuite : accessible uniquement aux admins connectés
-  router.post("/api/auth/register", (req, res) => {
+  router.post("/api/auth/register", validate.user, audit.authAction(db, 'user.register'), (req, res) => {
     const { username, password, display_name, role, email } = req.body;
-    if (!username || !password || !display_name) {
-      return res.status(400).json({ error: "username, password et display_name requis" });
-    }
+    // Validation handled by validate.user middleware
     db.get("SELECT COUNT(*) AS cnt FROM users", [], (err, row) => {
       if (err) return res.status(500).json({ error: err.message });
       const isFirstUser = (row.cnt === 0);
@@ -45,15 +65,27 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
   });
 
   // ── POST /api/auth/login ──────────────────────────────
-  router.post("/api/auth/login", (req, res) => {
+  router.post("/api/auth/login", audit.authAction(db, 'user.login'), (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: "username et password requis" });
-    const hash = hashPassword(password);
-    db.get("SELECT * FROM users WHERE username = ? AND password_hash = ?", [username, hash], (err, user) => {
+
+    db.get("SELECT * FROM users WHERE username = ?", [username], (err, user) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!user) return res.status(401).json({ error: "Identifiants incorrects" });
+
+      // Vérification mot de passe (SHA-256 legacy ou bcrypt)
+      if (!verifyPassword(password, user.password_hash)) {
+        return res.status(401).json({ error: "Identifiants incorrects" });
+      }
+
+      // Upgrade silencieux SHA-256 → bcrypt si nécessaire
+      if (isSha256Hash(user.password_hash)) {
+        const newHash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
+        db.run("UPDATE users SET password_hash = ? WHERE id = ?", [newHash, user.id]);
+      }
+
       const token = generateToken();
-      const expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(); // 7 jours
+      const expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
       db.run(
         "INSERT INTO auth_sessions (user_id, token, expires_at) VALUES (?, ?, ?)",
         [user.id, token, expires],
@@ -67,7 +99,7 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
   });
 
   // ── POST /api/auth/logout ─────────────────────────────
-  router.post("/api/auth/logout", requireAuth, (req, res) => {
+  router.post("/api/auth/logout", requireAuth, audit.authAction(db, 'user.logout'), (req, res) => {
     const header = req.headers["authorization"] || "";
     const token  = header.replace(/^Bearer\s+/, "");
     db.run("DELETE FROM auth_sessions WHERE token = ?", [token], () => res.json({ ok: true }));
@@ -264,6 +296,38 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
         res.json({ ok: true });
       }
     );
+  });
+
+  // ── Audit Logs (admin only) ────────────────────────────
+
+  // GET /api/admin/audit-logs
+  router.get("/api/admin/audit-logs", requireAuth, (req, res) => {
+    if (req.currentUser.role !== "admin") {
+      return res.status(403).json({ error: "Accès réservé aux administrateurs" });
+    }
+    const limit  = Math.min(200, parseInt(req.query.limit)  || 50);
+    const offset = Math.max(0,   parseInt(req.query.offset) || 0);
+    const action = req.query.action || null;
+    const userId = req.query.user_id || null;
+
+    let sql = "SELECT * FROM audit_logs WHERE 1=1";
+    const params = [];
+    if (action) { sql += " AND action = ?"; params.push(action); }
+    if (userId) { sql += " AND user_id = ?"; params.push(userId); }
+    sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    params.push(limit, offset);
+
+    db.all(sql, params, (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      db.get("SELECT COUNT(*) AS total FROM audit_logs WHERE 1=1" +
+        (action ? " AND action = '" + action.replace(/'/g, "''") + "'" : "") +
+        (userId ? " AND user_id = " + parseInt(userId) : ""),
+        [], (err2, countRow) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+          res.json({ logs: rows, total: countRow.total, limit, offset });
+        }
+      );
+    });
   });
 
   return router;
