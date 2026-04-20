@@ -1,6 +1,7 @@
 "use strict";
 
-const express = require("express");
+const express  = require("express");
+const validate = require("../middleware/validate");
 
 /**
  * @param {object}   db                - connexion SQLite3
@@ -31,9 +32,9 @@ module.exports = function createCicdRouter(db, requireAuth, generateApiToken, ha
   });
 
   // POST /api/user/api-tokens
-  router.post("/api/user/api-tokens", requireAuth, (req, res) => {
+  router.post("/api/user/api-tokens", requireAuth, validate.apiToken, (req, res) => {
     const { name, scopes = ["trigger"], project_ids = null, expires_in_days = null } = req.body;
-    if (!name) return res.status(400).json({ error: "name est requis" });
+    // Validation handled by validate.apiToken middleware
 
     const token       = generateApiToken();
     const tokenHash   = hashApiToken(token);
@@ -79,6 +80,50 @@ module.exports = function createCicdRouter(db, requireAuth, generateApiToken, ha
         if (err) return res.status(500).json({ error: err.message });
         if (this.changes === 0) return res.status(404).json({ error: "Token non trouvé" });
         res.json({ deleted: true });
+      }
+    );
+  });
+
+  // POST /api/user/api-tokens/:id/rotate
+  router.post("/api/user/api-tokens/:id/rotate", requireAuth, (req, res) => {
+    const tokenId = req.params.id;
+    db.get(
+      "SELECT * FROM api_tokens WHERE id = ? AND user_id = ?",
+      [tokenId, req.currentUser.id],
+      (err, existing) => {
+        if (err)       return res.status(500).json({ error: err.message });
+        if (!existing) return res.status(404).json({ error: "Token non trouvé" });
+
+        const newToken       = generateApiToken();
+        const newTokenHash   = hashApiToken(newToken);
+        const newTokenPrefix = newToken.slice(0, 12);
+
+        // Preserve expiry logic: if the old token had an expiry, keep same duration from now
+        let newExpiresAt = null;
+        if (existing.expires_at) {
+          const originalDuration = new Date(existing.expires_at).getTime() - new Date(existing.created_at).getTime();
+          newExpiresAt = new Date(Date.now() + originalDuration).toISOString();
+        }
+
+        db.run(
+          `UPDATE api_tokens
+           SET token_hash = ?, token_prefix = ?, expires_at = ?, last_used_at = NULL, created_at = datetime('now')
+           WHERE id = ? AND user_id = ?`,
+          [newTokenHash, newTokenPrefix, newExpiresAt, tokenId, req.currentUser.id],
+          function(err2) {
+            if (err2)          return res.status(500).json({ error: err2.message });
+            if (this.changes === 0) return res.status(404).json({ error: "Token non trouvé" });
+            res.json({
+              id:           parseInt(tokenId),
+              name:         existing.name,
+              token:        newToken,
+              token_prefix: newTokenPrefix,
+              scopes:       JSON.parse(existing.scopes || "[]"),
+              expires_at:   newExpiresAt,
+              message:      "Ancien token invalidé. Sauvegardez ce nouveau token maintenant. Il ne sera plus jamais affiché.",
+            });
+          }
+        );
       }
     );
   });

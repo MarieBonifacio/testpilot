@@ -16,13 +16,15 @@
 
 "use strict";
 
-const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
-const https   = require("https");
-const path    = require("path");
-const fs      = require("fs");
-const XLSX    = require("xlsx");
-const crypto  = require("crypto");
+const express    = require("express");
+const sqlite3    = require("sqlite3").verbose();
+const https      = require("https");
+const path       = require("path");
+const fs         = require("fs");
+const XLSX       = require("xlsx");
+const crypto     = require("crypto");
+const bcrypt     = require("bcryptjs");
+const rateLimit  = require("express-rate-limit");
 
 const createOllamaRouter    = require("./routes/ollama");
 const createAuthRouter      = require("./routes/auth");
@@ -33,6 +35,37 @@ const createScenariosRouter = require("./routes/scenarios");
 const app  = express();
 const PORT = process.env.PORT || 3000;
 const ENV_KEY = process.env.ANTHROPIC_API_KEY || null;
+
+// ── Rate limiters ────────────────────────────────────────────────────────────
+// Désactivés en mode test pour ne pas bloquer les tests
+const isTest = process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID;
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isTest ? 1000 : 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Trop de tentatives de connexion. Réessayez dans 15 minutes." },
+  skip: () => Boolean(isTest),
+});
+
+const triggerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 heure
+  max: isTest ? 10000 : 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Quota de déclenchements CI/CD atteint. Réessayez dans 1 heure." },
+  skip: () => Boolean(isTest),
+});
+
+const llmLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: isTest ? 10000 : 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Trop de requêtes LLM. Attendez 1 minute." },
+  skip: () => Boolean(isTest),
+});
 
 // ── Database connection ──────────────────────────────
 const dbPath = path.join(__dirname, "testpilot.db");
@@ -48,8 +81,24 @@ db.run("PRAGMA foreign_keys = ON", (err) => {
 // ── Middleware ───────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.raw({ type: "application/octet-stream", limit: "20mb" }));
+
+// CORS — configurable via CORS_ORIGINS (virgule-séparé) ou "*" par défaut
+const corsOriginsEnv = process.env.CORS_ORIGINS || "";
+const allowedOrigins = corsOriginsEnv
+  ? corsOriginsEnv.split(",").map(s => s.trim()).filter(Boolean)
+  : [];
+
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin || "";
+  if (allowedOrigins.length === 0) {
+    // Pas de restriction configurée → autoriser tout (comportement historique)
+    res.header("Access-Control-Allow-Origin", "*");
+  } else if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+  } else {
+    // Origine non autorisée : pas de header CORS (le navigateur bloquera)
+  }
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, x-api-key, anthropic-version, Authorization");
   if (req.method === "OPTIONS") return res.sendStatus(204);
@@ -69,8 +118,12 @@ app.use((req, res, next) => {
 });
 
 // ── Auth helpers (définis tôt pour être disponibles partout) ────────────────
+const BCRYPT_ROUNDS = 10;
+
+// hashPassword : bcrypt (async via sync pour compatibilité avec l'interface existante)
+// Utilisé uniquement pour les nouveaux mots de passe (register, changement mdp).
 function hashPassword(pw) {
-  return require("crypto").createHash("sha256").update(pw).digest("hex");
+  return bcrypt.hashSync(pw, BCRYPT_ROUNDS);
 }
 function generateToken() {
   return require("crypto").randomBytes(32).toString("hex");
@@ -106,6 +159,13 @@ function authMiddleware(req, res, next) {
         if (apiToken.expires_at && apiToken.expires_at < now) return next();
         // Mise à jour last_used_at (fire-and-forget)
         db.run("UPDATE api_tokens SET last_used_at = datetime('now') WHERE id = ?", [apiToken.id]);
+        // Avertir si le token expire dans moins de 7 jours
+        if (apiToken.expires_at) {
+          const msLeft = new Date(apiToken.expires_at).getTime() - Date.now();
+          if (msLeft < 7 * 24 * 3600 * 1000) {
+            res.set("X-Token-Expires-Soon", apiToken.expires_at);
+          }
+        }
         req.currentUser = {
           id: apiToken.uid,
           role: apiToken.urole,
@@ -658,7 +718,7 @@ function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
 app.use("/api/ollama", createOllamaRouter(requireAuth, () => module.exports.ollamaRequest));
 
 // POST /api/messages - Proxy Anthropic
-app.post("/api/messages", requireAuth, (req, res) => {
+app.post("/api/messages", requireAuth, llmLimiter, (req, res) => {
   const apiKey = req.headers["x-api-key"] || ENV_KEY;
   if (!apiKey) {
     return res.status(401).json({ error: "Clé API manquante. Saisissez votre clé dans l'interface ou définissez ANTHROPIC_API_KEY sur le serveur." });
@@ -1687,6 +1747,10 @@ app.get("/api/projects/:id/comep-report", requireAuth, (req, res) => {
 // ██  P3 — AUTH / USERS / WORKFLOW / NOTIFICATIONS  → routes/auth.js
 // ══════════════════════════════════════════════════════
 
+// Apply rate limiters before specific routes
+app.post("/api/auth/login", loginLimiter);
+app.post("/api/trigger", triggerLimiter);
+
 app.use(createAuthRouter(db, hashPassword, generateToken, requireAuth, requireCP));
 
 // ══════════════════════════════════════════════════════
@@ -1719,6 +1783,12 @@ app.use(express.static(__dirname, {
   },
 }));
 
+// ══════════════════════════════════════════════════════
+// ██  P6 — EXPORT DOCUMENTAIRE  → routes/export.js
+// ══════════════════════════════════════════════════════
+const docGenerator = require("./exports/doc-generator");
+app.use(createExportRouter(db, requireAuth));
+
 // Fallback pour les routes non trouvées
 app.use((req, res) => {
   if (req.path.startsWith("/api/")) {
@@ -1726,12 +1796,6 @@ app.use((req, res) => {
   }
   res.sendFile(path.join(__dirname, "index.html"));
 });
-
-// ══════════════════════════════════════════════════════
-// ██  P6 — EXPORT DOCUMENTAIRE  → routes/export.js
-// ══════════════════════════════════════════════════════
-const docGenerator = require("./exports/doc-generator");
-app.use(createExportRouter(db, requireAuth));
 
 // ══════════════════════════════════════════════════════
 // ██  START SERVER

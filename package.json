@@ -7,7 +7,7 @@
     "start": "node proxy.js",
     "init-db": "node init_db.js",
     "dev": "node init_db.js && node proxy.js",
-    "test": "jest tests/ --forceExit",
+    "test": "jest tests/ --forceExit --runInBand",
     "test:watch": "jest tests/ --watch"
   },
   "jest": {
@@ -32,8 +32,10 @@
   },
   "homepage": "https://github.com/MarieBonifacio/testpilot#readme",
   "dependencies": {
-    "docx": "^9.6.1",
+    "bcryptjs": "^3.0.3",
+    "docx": "^8.5.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
     "sqlite3": "^6.0.1",
     "xlsx": "^0.18.5"
   },
