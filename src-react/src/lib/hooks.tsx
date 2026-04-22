@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { projectsApi, projectStore, authStore, authApi, notificationsApi } from './api';
 import type { Project, ProjectContext, User, AuthState, Notification } from '../types';
 
@@ -124,13 +124,10 @@ export function useNotifications() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const failsRef    = useCallback(() => 0, []) as unknown as React.MutableRefObject<number>;
-  const timerRef    = useCallback(() => undefined, []) as unknown as React.MutableRefObject<ReturnType<typeof setTimeout> | undefined>;
 
-  // Use refs so the schedule callback never goes stale
-  const failCountRef = useState(() => ({ current: 0 }))[0];
-  const timerIdRef   = useState(() => ({ current: undefined as ReturnType<typeof setTimeout> | undefined }))[0];
-  void failsRef; void timerRef; // suppress unused-var lint
+  // useRef — valeurs mutables stables sans déclencher de re-render
+  const failCountRef = useRef(0);
+  const timerIdRef   = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const load = useCallback(async () => {
     if (!user || document.hidden) return;
@@ -142,7 +139,7 @@ export function useNotifications() {
     } catch {
       failCountRef.current += 1;
     }
-  }, [user, failCountRef]);
+  }, [user]);
 
   const schedule = useCallback(() => {
     const backoff = Math.min(POLL_BASE_MS * 2 ** failCountRef.current, POLL_MAX_MS);
@@ -150,9 +147,10 @@ export function useNotifications() {
       await load();
       schedule();
     }, backoff);
-  }, [load, failCountRef, timerIdRef]);
+  }, [load]);
 
   useEffect(() => {
+    if (!user) return; // ne pas démarrer le polling sans utilisateur connecté
     load();
     schedule();
 
@@ -163,7 +161,7 @@ export function useNotifications() {
       document.removeEventListener('visibilitychange', onVisible);
       clearTimeout(timerIdRef.current);
     };
-  }, [load, schedule, timerIdRef]);
+  }, [user, load, schedule]);
 
   const markRead = async (id: number) => {
     await notificationsApi.markRead(id);
