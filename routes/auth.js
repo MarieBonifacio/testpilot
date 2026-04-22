@@ -319,16 +319,18 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
     sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
 
+    // Requête COUNT avec les mêmes paramètres liés — pas de concaténation
+    let countSql = "SELECT COUNT(*) AS total FROM audit_logs WHERE 1=1";
+    const countParams = [];
+    if (action) { countSql += " AND action = ?"; countParams.push(action); }
+    if (userId) { countSql += " AND user_id = ?"; countParams.push(userId); }
+
     db.all(sql, params, (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      db.get("SELECT COUNT(*) AS total FROM audit_logs WHERE 1=1" +
-        (action ? " AND action = '" + action.replace(/'/g, "''") + "'" : "") +
-        (userId ? " AND user_id = " + parseInt(userId) : ""),
-        [], (err2, countRow) => {
-          if (err2) return res.status(500).json({ error: err2.message });
-          res.json({ logs: rows, total: countRow.total, limit, offset });
-        }
-      );
+      db.get(countSql, countParams, (err2, countRow) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        res.json({ logs: rows, total: countRow.total, limit, offset });
+      });
     });
   });
 
