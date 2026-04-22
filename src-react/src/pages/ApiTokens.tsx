@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Key, Plus, Trash2, Copy, Check, AlertTriangle, Clock, Shield, ExternalLink } from 'lucide-react';
+import { Key, Plus, Trash2, Copy, Check, AlertTriangle, Clock, Shield, ExternalLink, RefreshCw, History, GitBranch } from 'lucide-react';
 import { apiTokensApi, projectsApi } from '../lib/api';
-import type { ApiToken, ApiTokenCreated, Project } from '../types';
+import type { ApiToken, ApiTokenCreated, Project, TriggerHistory } from '../types';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function formatDate(d: string | null) {
@@ -17,10 +17,23 @@ function isExpired(expires_at: string | null) {
   return new Date(expires_at) < new Date();
 }
 
+function isExpiringSoon(expires_at: string | null) {
+  if (!expires_at) return false;
+  const msLeft = new Date(expires_at).getTime() - Date.now();
+  return msLeft > 0 && msLeft < 7 * 24 * 3600 * 1000;
+}
+
 const SCOPE_LABELS: Record<string, string> = {
   trigger: 'Déclencher campagnes',
   read:    'Lire résultats',
   write:   'Écrire résultats',
+};
+
+const TRIGGER_SOURCE_LABELS: Record<string, string> = {
+  'github-actions': 'GitHub Actions',
+  'gitlab-ci':      'GitLab CI',
+  'azure-devops':   'Azure DevOps',
+  'api':            'API directe',
 };
 
 // ── Composant principal ────────────────────────────────────────────────────────
@@ -33,6 +46,12 @@ export function ApiTokens() {
   const [newToken, setNewToken]   = useState<ApiTokenCreated | null>(null);
   const [copied, setCopied]       = useState(false);
   const [deleting, setDeleting]   = useState<number | null>(null);
+  const [rotating, setRotating]   = useState<number | null>(null);
+
+  // Historique triggers
+  const [history, setHistory]         = useState<TriggerHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Form state
   const [fname, setFname]             = useState('');
@@ -61,6 +80,19 @@ export function ApiTokens() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const data = await apiTokensApi.triggerHistory(50);
+      setHistory(data);
+      setShowHistory(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const toggleScope = (s: string) => {
     setFscopes(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
@@ -125,6 +157,21 @@ export function ApiTokens() {
     }
   };
 
+  const rotateToken = async (id: number) => {
+    if (!confirm('Faire tourner ce token ? L\'ancien sera immédiatement invalidé.')) return;
+    setRotating(id);
+    setNewToken(null);
+    try {
+      const rotated = await apiTokensApi.rotate(id);
+      setNewToken(rotated);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRotating(null);
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
@@ -134,14 +181,24 @@ export function ApiTokens() {
             Gérez les tokens d'accès pour vos pipelines CI/CD
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setShowForm(true); setNewToken(null); }}>
-          <Plus size={14} /> Nouveau token
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            className="btn btn-secondary"
+            onClick={showHistory ? () => setShowHistory(false) : loadHistory}
+            disabled={historyLoading}
+          >
+            {historyLoading ? <div className="spinner" /> : <History size={14} />}
+            {showHistory ? 'Masquer l\'historique' : 'Historique triggers'}
+          </button>
+          <button className="btn btn-primary" onClick={() => { setShowForm(true); setNewToken(null); }}>
+            <Plus size={14} /> Nouveau token
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-msg mb-4">{error}</div>}
 
-      {/* Modal token créé — affiché une seule fois */}
+      {/* Modal token créé/tourné — affiché une seule fois */}
       {newToken && (
         <div className="rounded-lg p-5 mb-6"
           style={{ background: 'var(--warning-bg, #fff8e1)', border: '2px solid var(--warning)' }}>
@@ -286,19 +343,20 @@ export function ApiTokens() {
       ) : (
         <div className="space-y-3">
           {tokens.map(tok => {
-            const expired = isExpired(tok.expires_at);
-            const neverUsed = !tok.last_used_at;
+            const expired     = isExpired(tok.expires_at);
+            const expireSoon  = isExpiringSoon(tok.expires_at);
+            const neverUsed   = !tok.last_used_at;
             return (
               <div
                 key={tok.id}
                 className="rounded-lg p-4 flex items-start gap-3"
                 style={{
                   background: 'var(--bg-elevated)',
-                  border: `1px solid ${expired ? 'var(--danger)' : 'var(--border)'}`,
+                  border: `1px solid ${expired ? 'var(--danger)' : expireSoon ? 'var(--warning)' : 'var(--border)'}`,
                   opacity: expired ? 0.6 : 1,
                 }}
               >
-                <Key size={16} style={{ color: expired ? 'var(--danger)' : 'var(--accent)', flexShrink: 0, marginTop: 2 }} />
+                <Key size={16} style={{ color: expired ? 'var(--danger)' : expireSoon ? 'var(--warning)' : 'var(--accent)', flexShrink: 0, marginTop: 2 }} />
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -307,6 +365,12 @@ export function ApiTokens() {
                       <span className="text-[0.65rem] px-1.5 py-0.5 rounded font-bold"
                         style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
                         EXPIRÉ
+                      </span>
+                    )}
+                    {expireSoon && !expired && (
+                      <span className="text-[0.65rem] px-1.5 py-0.5 rounded font-bold"
+                        style={{ background: 'var(--warning-bg, #fff8e1)', color: 'var(--warning)' }}>
+                        EXPIRE BIENTÔT
                       </span>
                     )}
                     {neverUsed && !expired && (
@@ -328,7 +392,7 @@ export function ApiTokens() {
                       {tok.last_used_at ? `Utilisé le ${formatDate(tok.last_used_at)}` : 'Jamais utilisé'}
                     </span>
                     {tok.expires_at && (
-                      <span style={{ color: expired ? 'var(--danger)' : 'inherit' }}>
+                      <span style={{ color: expired ? 'var(--danger)' : expireSoon ? 'var(--warning)' : 'inherit' }}>
                         Expire le {formatDate(tok.expires_at)}
                       </span>
                     )}
@@ -343,18 +407,88 @@ export function ApiTokens() {
                   </div>
                 </div>
 
-                <button
-                  className="btn-icon flex-shrink-0"
-                  style={{ color: 'var(--danger)' }}
-                  onClick={() => deleteToken(tok.id)}
-                  disabled={deleting === tok.id}
-                  title="Révoquer ce token"
-                >
-                  {deleting === tok.id ? <div className="spinner" /> : <Trash2 size={15} />}
-                </button>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button
+                    className="btn-icon"
+                    style={{ color: 'var(--accent)' }}
+                    onClick={() => rotateToken(tok.id)}
+                    disabled={rotating === tok.id}
+                    title="Faire tourner ce token (invalide l'ancien)"
+                  >
+                    {rotating === tok.id ? <div className="spinner" /> : <RefreshCw size={14} />}
+                  </button>
+                  <button
+                    className="btn-icon"
+                    style={{ color: 'var(--danger)' }}
+                    onClick={() => deleteToken(tok.id)}
+                    disabled={deleting === tok.id}
+                    title="Révoquer ce token"
+                  >
+                    {deleting === tok.id ? <div className="spinner" /> : <Trash2 size={15} />}
+                  </button>
+                </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Historique des déclenchements CI/CD */}
+      {showHistory && (
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <GitBranch size={16} style={{ color: 'var(--accent)' }} />
+            <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>
+              Historique des déclenchements CI/CD
+            </h2>
+          </div>
+          {history.length === 0 ? (
+            <div className="rounded-lg p-6 text-center text-sm"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              Aucun déclenchement enregistré.
+            </div>
+          ) : (
+            <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-dim)' }}>Date</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-dim)' }}>Projet</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-dim)' }}>Session</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-dim)' }}>Source</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-dim)' }}>Branche</th>
+                    <th className="text-left px-3 py-2 font-semibold" style={{ color: 'var(--text-dim)' }}>Token</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((h, i) => (
+                    <tr key={h.id} style={{
+                      borderBottom: i < history.length - 1 ? '1px solid var(--border)' : 'none',
+                      background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg-elevated)',
+                    }}>
+                      <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-dim)' }}>
+                        {formatDate(h.triggered_at)}
+                      </td>
+                      <td className="px-3 py-2">{h.project_name}</td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{h.session_name}</td>
+                      <td className="px-3 py-2">
+                        <span className="px-1.5 py-0.5 rounded text-[0.65rem] font-bold"
+                          style={{ background: 'var(--accent-bg)', color: 'var(--accent)' }}>
+                          {h.trigger_source ? (TRIGGER_SOURCE_LABELS[h.trigger_source] ?? h.trigger_source) : '—'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-dim)' }}>
+                        {h.branch ?? '—'}
+                      </td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>
+                        {h.token_name ?? '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

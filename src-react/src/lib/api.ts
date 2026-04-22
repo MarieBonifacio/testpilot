@@ -12,6 +12,7 @@ import type {
   TnrDurationKPI, FlakinessKPI, FlakinessHistory,
   ApiToken, ApiTokenCreated, TriggerHistory,
   ProjectDocConfig,
+  AuditLog,
 } from '../types';
 
 const BASE_URL = '';
@@ -60,6 +61,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     clearAuthState();
     window.location.href = '/login';
     throw new Error('Session expirée — veuillez vous reconnecter.');
+  }
+
+  // Avertir si le token API expire bientôt (header injecté par authMiddleware)
+  const expiresSoon = response.headers.get('X-Token-Expires-Soon');
+  if (expiresSoon) {
+    window.dispatchEvent(new CustomEvent('tokenExpiresSoon', { detail: { expires_at: expiresSoon } }));
   }
 
   if (!response.ok) {
@@ -522,8 +529,25 @@ export const apiTokensApi = {
     api.get<ApiToken[]>('/api/user/api-tokens'),
   create: (data: { name: string; scopes?: string[]; project_ids?: number[] | null; expires_in_days?: number | null }) =>
     api.post<ApiTokenCreated>('/api/user/api-tokens', data),
+  rotate: (id: number) =>
+    api.post<ApiTokenCreated>(`/api/user/api-tokens/${id}/rotate`, {}),
   delete: (id: number) =>
     api.delete<{ deleted: boolean }>(`/api/user/api-tokens/${id}`),
   triggerHistory: (limit = 50) =>
     api.get<TriggerHistory[]>(`/api/trigger/history?limit=${limit}`),
+};
+
+// ══════════════════════════════════════════════════════
+// Admin — Audit Logs
+// ══════════════════════════════════════════════════════
+export const auditApi = {
+  list: (params?: { action?: string; user_id?: number; limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.action)  qs.set('action',  params.action);
+    if (params?.user_id) qs.set('user_id', String(params.user_id));
+    if (params?.limit)   qs.set('limit',   String(params.limit));
+    if (params?.offset)  qs.set('offset',  String(params.offset));
+    const q = qs.toString() ? `?${qs.toString()}` : '';
+    return api.get<{ logs: AuditLog[]; total: number }>(`/api/admin/audit-logs${q}`);
+  },
 };

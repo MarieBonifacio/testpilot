@@ -407,3 +407,17 @@ export interface ProjectDocConfig {
   logo_base64: string | null;
   updated_at: string | null;
 }
+
+// ── Audit Logs ────────────────────────────────────────
+export interface AuditLog {
+  id: number;
+  user_id: number | null;
+  username: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  details: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}

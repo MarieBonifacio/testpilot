@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { ProjectProvider, AuthProvider, useAuth } from './lib/hooks';
 import { Redaction } from './pages/Redaction';
@@ -16,12 +16,50 @@ import { ProductionBugs } from './pages/ProductionBugs';
 import { ApiTokens } from './pages/ApiTokens';
 import { CiCdDocs } from './pages/CiCdDocs';
 import { ProjectSettings } from './pages/ProjectSettings';
+import { AuditLogs } from './pages/AuditLogs';
 import { ProjectSelector } from './components/ProjectSelector';
 import { NotificationBell } from './components/NotificationBell';
 import {
   Plane, Sun, Moon, LogOut, FileSpreadsheet,
-  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug, Key, BookOpen, Settings,
+  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug, Key, BookOpen, Settings, AlertTriangle, X,
 } from 'lucide-react';
+
+// ── Bandeau avertissement token CI/CD expirant ────────
+function TokenExpiresBanner() {
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+
+  const handleEvent = useCallback((e: Event) => {
+    const detail = (e as CustomEvent<{ expires_at: string }>).detail;
+    setExpiresAt(detail.expires_at);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('tokenExpiresSoon', handleEvent);
+    return () => window.removeEventListener('tokenExpiresSoon', handleEvent);
+  }, [handleEvent]);
+
+  if (!expiresAt) return null;
+
+  const daysLeft = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 86400));
+  return (
+    <div className="flex items-center gap-3 px-4 py-2 text-xs font-medium"
+      style={{ background: 'var(--warning-bg, #fff8e1)', borderBottom: '1px solid var(--warning)', color: 'var(--warning)' }}>
+      <AlertTriangle size={13} />
+      <span>
+        Un token API expire dans <strong>{daysLeft} jour{daysLeft > 1 ? 's' : ''}</strong> ({new Date(expiresAt).toLocaleDateString('fr-FR')}).{' '}
+        <a href="/api-tokens" className="underline font-bold">Faire tourner le token →</a>
+      </span>
+      <button
+        className="ml-auto"
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--warning)' }}
+        onClick={() => setExpiresAt(null)}
+        title="Fermer"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
 
 // ── Garde de route ─────────────────────────────────────
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -99,15 +137,20 @@ function Navigation() {
         <NavLink to="/cicd-docs" className={navLinkClass}>
           <span className="flex items-center gap-1"><BookOpen size={13} />CI/CD</span>
         </NavLink>
-        <NavLink to="/settings" className={navLinkClass}>
-          <span className="flex items-center gap-1"><Settings size={13} />Paramètres</span>
-        </NavLink>
-        <NavLink to="/export"        className={navLinkClass}>Export</NavLink>
-        {(user?.role === 'cp' || user?.role === 'admin') && (
-          <NavLink to="/users" className={navLinkClass}>
-            <span className="flex items-center gap-1"><UsersIcon size={13} />Utilisateurs</span>
+          <NavLink to="/settings" className={navLinkClass}>
+            <span className="flex items-center gap-1"><Settings size={13} />Paramètres</span>
           </NavLink>
-        )}
+          <NavLink to="/export"        className={navLinkClass}>Export</NavLink>
+          {(user?.role === 'cp' || user?.role === 'admin') && (
+            <NavLink to="/users" className={navLinkClass}>
+              <span className="flex items-center gap-1"><UsersIcon size={13} />Utilisateurs</span>
+            </NavLink>
+          )}
+          {user?.role === 'admin' && (
+            <NavLink to="/audit-logs" className={navLinkClass}>
+              <span className="flex items-center gap-1"><ShieldCheck size={13} />Audit</span>
+            </NavLink>
+          )}
       </div>
 
       {/* Right: project + notifs + user */}
@@ -164,10 +207,11 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/*" element={
-            <RequireAuth>
-              <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-                <Navigation />
-                <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 20px' }}>
+          <RequireAuth>
+            <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+              <Navigation />
+              <TokenExpiresBanner />
+              <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 20px' }}>
                   <Routes>
                     <Route path="/"            element={<Redaction />} />
                     <Route path="/dashboard"   element={<Dashboard />} />
@@ -183,6 +227,7 @@ export default function App() {
                     <Route path="/cicd-docs" element={<CiCdDocs />} />
                     <Route path="/settings" element={<ProjectSettings />} />
                     <Route path="/users"       element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
+                    <Route path="/audit-logs"  element={<RequireRole roles={['admin']}><AuditLogs /></RequireRole>} />
                     <Route path="*"            element={<Navigate to="/" replace />} />
                   </Routes>
                 </main>
