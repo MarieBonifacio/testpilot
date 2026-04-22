@@ -5,9 +5,10 @@ const express = require("express");
 /**
  * @param {object}   db                        - connexion SQLite3
  * @param {Function} requireAuth               - middleware auth obligatoire
+ * @param {Function} requireCP                 - middleware rôle CP/admin obligatoire
  * @param {Function} detectFlakinessForSession - async (sessionId) => void, définie dans proxy.js
  */
-module.exports = function createScenariosRouter(db, requireAuth, detectFlakinessForSession) {
+module.exports = function createScenariosRouter(db, requireAuth, requireCP, detectFlakinessForSession) {
   const router = express.Router();
 
   // ── Project Context ───────────────────────────────────
@@ -162,16 +163,16 @@ module.exports = function createScenariosRouter(db, requireAuth, detectFlakiness
     });
   });
 
-  // DELETE /api/projects/:id/scenarios
-  router.delete("/api/projects/:id/scenarios", requireAuth, (req, res) => {
+  // DELETE /api/projects/:id/scenarios — requireCP : action destructrice, rôle minimum cp
+  router.delete("/api/projects/:id/scenarios", requireAuth, requireCP, (req, res) => {
     db.run("DELETE FROM scenarios WHERE project_id = ?", [req.params.id], function(err) {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ deleted: this.changes });
     });
   });
 
-  // POST /api/projects/:id/scenarios/accept-all
-  router.post("/api/projects/:id/scenarios/accept-all", requireAuth, (req, res) => {
+  // POST /api/projects/:id/scenarios/accept-all — requireCP : validation massive
+  router.post("/api/projects/:id/scenarios/accept-all", requireAuth, requireCP, (req, res) => {
     db.run("UPDATE scenarios SET accepted = 1, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?", [req.params.id], function(err) {
       if (err) return res.status(500).json({ error: err.message });
       res.json({ accepted: this.changes });

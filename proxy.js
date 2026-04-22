@@ -310,7 +310,7 @@ Campagne réalisée le ${new Date(campaign.finished_at || campaign.started_at ||
 // ██  API PROJECT CONTEXT / SCENARIOS / SESSIONS / STATS  → routes/scenarios.js
 // ══════════════════════════════════════════════════════
 
-app.use(createScenariosRouter(db, requireAuth, detectFlakinessForSession));
+app.use(createScenariosRouter(db, requireAuth, requireCP, detectFlakinessForSession));
 
 
 // ══════════════════════════════════════════════════════
