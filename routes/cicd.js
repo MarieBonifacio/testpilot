@@ -8,8 +8,9 @@ const validate = require("../middleware/validate");
  * @param {Function} requireAuth       - middleware auth obligatoire
  * @param {Function} generateApiToken  - génère un token CI/CD (préfixe tpt_)
  * @param {Function} hashApiToken      - hash SHA-256 d'un token API
+ * @param {Function} triggerLimiter    - rate limiter express-rate-limit pour /api/trigger
  */
-module.exports = function createCicdRouter(db, requireAuth, generateApiToken, hashApiToken) {
+module.exports = function createCicdRouter(db, requireAuth, generateApiToken, hashApiToken, triggerLimiter) {
   const router = express.Router();
 
   // ── API Tokens ────────────────────────────────────────
@@ -130,8 +131,8 @@ module.exports = function createCicdRouter(db, requireAuth, generateApiToken, ha
 
   // ── CI/CD Trigger ─────────────────────────────────────
 
-  // POST /api/trigger
-  router.post("/api/trigger", requireAuth, (req, res) => {
+  // POST /api/trigger — triggerLimiter monté EN PREMIER
+  router.post("/api/trigger", triggerLimiter, requireAuth, (req, res) => {
     const {
       project,
       filter       = "all",

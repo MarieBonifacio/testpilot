@@ -1747,17 +1747,21 @@ app.get("/api/projects/:id/comep-report", requireAuth, (req, res) => {
 // ██  P3 — AUTH / USERS / WORKFLOW / NOTIFICATIONS  → routes/auth.js
 // ══════════════════════════════════════════════════════
 
-// Apply rate limiters before specific routes
-app.post("/api/auth/login", loginLimiter);
-app.post("/api/trigger", triggerLimiter);
-
-app.use(createAuthRouter(db, hashPassword, generateToken, requireAuth, requireCP));
+// loginLimiter passé au routeur pour être monté EN PREMIER sur /api/auth/login
+app.use(createAuthRouter(db, hashPassword, generateToken, requireAuth, requireCP, loginLimiter));
 
 // ══════════════════════════════════════════════════════
 // ██  P5.1 — API TOKENS / CI/CD  → routes/cicd.js
 // ══════════════════════════════════════════════════════
 
-app.use(createCicdRouter(db, requireAuth, generateApiToken, hashApiToken));
+// triggerLimiter passé au routeur pour être monté EN PREMIER sur /api/trigger
+app.use(createCicdRouter(db, requireAuth, generateApiToken, hashApiToken, triggerLimiter));
+
+// ══════════════════════════════════════════════════════
+// ██  P6 — EXPORT DOCUMENTAIRE  → routes/export.js
+// ══════════════════════════════════════════════════════
+const docGenerator = require("./exports/doc-generator");
+app.use(createExportRouter(db, requireAuth));
 
 // ══════════════════════════════════════════════════════
 // ██  STATIC FILES — React SPA (unique frontend)
@@ -1768,32 +1772,24 @@ const reactDist = path.join(__dirname, "src-react", "dist");
 if (fs.existsSync(reactDist)) {
   // Serve static assets from React build
   app.use(express.static(reactDist));
-  // SPA fallback: unknown routes → index.html (React Router handles routing)
+  // SPA fallback: unknown routes (non-API) → index.html (React Router handles routing)
   app.use((req, res) => {
+    if (req.path.startsWith("/api/")) {
+      return res.status(404).json({ error: "Endpoint non trouvé" });
+    }
     res.sendFile(path.join(reactDist, "index.html"));
   });
 } else {
   // Fallback if build doesn't exist
   app.use((req, res) => {
+    if (req.path.startsWith("/api/")) {
+      return res.status(404).json({ error: "Endpoint non trouvé" });
+    }
     res.status(503).json({
       error: "Frontend build not found. Run: cd src-react && npm run build",
     });
   });
 }
-
-// ══════════════════════════════════════════════════════
-// ██  P6 — EXPORT DOCUMENTAIRE  → routes/export.js
-// ══════════════════════════════════════════════════════
-const docGenerator = require("./exports/doc-generator");
-app.use(createExportRouter(db, requireAuth));
-
-// Fallback pour les routes non trouvées
-app.use((req, res) => {
-  if (req.path.startsWith("/api/")) {
-    return res.status(404).json({ error: "Endpoint non trouvé" });
-  }
-  res.sendFile(path.join(__dirname, "index.html"));
-});
 
 // ══════════════════════════════════════════════════════
 // ██  START SERVER

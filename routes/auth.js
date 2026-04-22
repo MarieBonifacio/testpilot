@@ -26,12 +26,13 @@ function verifyPassword(plaintext, storedHash) {
 
 /**
  * @param {object}   db              - connexion SQLite3
- * @param {Function} hashPassword    - hash SHA-256 d'un mot de passe
+ * @param {Function} hashPassword    - hash bcrypt d'un mot de passe
  * @param {Function} generateToken   - génère un token de session aléatoire
  * @param {Function} requireAuth     - middleware d'authentification obligatoire
  * @param {Function} requireCP       - middleware rôle CP/admin obligatoire
+ * @param {Function} loginLimiter    - rate limiter express-rate-limit pour /api/auth/login
  */
-module.exports = function createAuthRouter(db, hashPassword, generateToken, requireAuth, requireCP) {
+module.exports = function createAuthRouter(db, hashPassword, generateToken, requireAuth, requireCP, loginLimiter) {
   const router = express.Router();
 
   // ── POST /api/auth/register ───────────────────────────
@@ -65,7 +66,8 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
   });
 
   // ── POST /api/auth/login ──────────────────────────────
-  router.post("/api/auth/login", audit.authAction(db, 'user.login'), (req, res) => {
+  // loginLimiter monté EN PREMIER pour que le rate limiting soit effectif
+  router.post("/api/auth/login", loginLimiter, audit.authAction(db, 'user.login'), (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: "username et password requis" });
 
