@@ -1760,31 +1760,24 @@ app.use(createAuthRouter(db, hashPassword, generateToken, requireAuth, requireCP
 app.use(createCicdRouter(db, requireAuth, generateApiToken, hashApiToken));
 
 // ══════════════════════════════════════════════════════
-// ██  STATIC FILES — Legacy HTML first, then React SPA
+// ██  STATIC FILES — React SPA (unique frontend)
 // ══════════════════════════════════════════════════════
 
-// Pages HTML vanilla (ancienne interface) — uniquement les .html et assets CSS/JS explicites
-app.use(express.static(__dirname, {
-  extensions: ["html"],
-  index: false, // pas d'index auto depuis la racine
-  setHeaders: (res, filePath) => {
-    // Bloquer l'accès aux fichiers sensibles
-    const blocked = [".js", ".db", ".json", ".sql", ".env"];
-    const ext = path.extname(filePath).toLowerCase();
-    if (blocked.includes(ext) && !filePath.endsWith(".html")) {
-      res.setHeader("Content-Type", "text/plain");
-    }
-  },
-}));
-
-// Fichiers statiques React (build Vite) — servi EN DERNIER comme fallback SPA
-// Toute route inconnue → index.html (React Router gère le routing)
+// Fichiers statiques React (build Vite)
 const reactDist = path.join(__dirname, "src-react", "dist");
 if (fs.existsSync(reactDist)) {
+  // Serve static assets from React build
   app.use(express.static(reactDist));
-  // SPA fallback : routes inconnues → /index.html (via middleware, pas app.get)
+  // SPA fallback: unknown routes → index.html (React Router handles routing)
   app.use((req, res) => {
     res.sendFile(path.join(reactDist, "index.html"));
+  });
+} else {
+  // Fallback if build doesn't exist
+  app.use((req, res) => {
+    res.status(503).json({
+      error: "Frontend build not found. Run: cd src-react && npm run build",
+    });
   });
 }
 
