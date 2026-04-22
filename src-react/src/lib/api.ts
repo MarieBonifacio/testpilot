@@ -46,28 +46,38 @@ function clearAuthState(): void {
   window.dispatchEvent(new CustomEvent('authChanged', { detail: { user: null, token: null } }));
 }
 
-// ── Requête générique ─────────────────────────────────
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const auth = getAuthState();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`;
-
-  const options: RequestInit = { method, headers };
-  if (body) options.body = JSON.stringify(body);
-
-  const response = await fetch(BASE_URL + path, options);
-
+// ── Gestion centralisée des headers et réponses 401/tokenExpiresSoon ─────────
+async function handleResponse(response: Response): Promise<void> {
   if (response.status === 401) {
     clearAuthState();
     window.location.href = '/login';
     throw new Error('Session expirée — veuillez vous reconnecter.');
   }
-
-  // Avertir si le token API expire bientôt (header injecté par authMiddleware)
   const expiresSoon = response.headers.get('X-Token-Expires-Soon');
   if (expiresSoon) {
     window.dispatchEvent(new CustomEvent('tokenExpiresSoon', { detail: { expires_at: expiresSoon } }));
   }
+}
+
+function buildAuthHeaders(): Record<string, string> {
+  const auth = getAuthState();
+  const headers: Record<string, string> = {};
+  if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`;
+  return headers;
+}
+
+// ── Requête générique JSON ────────────────────────────
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...buildAuthHeaders(),
+  };
+
+  const options: RequestInit = { method, headers };
+  if (body) options.body = JSON.stringify(body);
+
+  const response = await fetch(BASE_URL + path, options);
+  await handleResponse(response);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
@@ -77,12 +87,27 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return response.json();
 }
 
+// ── Requête binaire (téléchargements DOCX, etc.) ──────
+async function requestBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = buildAuthHeaders();
+  const response = await fetch(BASE_URL + path, { method: 'GET', headers });
+  await handleResponse(response);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Erreur téléchargement');
+  }
+
+  return response.blob();
+}
+
 export const api = {
-  get:    <T>(path: string)                => request<T>('GET',    path),
-  post:   <T>(path: string, body: unknown) => request<T>('POST',   path, body),
-  put:    <T>(path: string, body: unknown) => request<T>('PUT',    path, body),
-  patch:  <T>(path: string, body?: unknown)=> request<T>('PATCH',  path, body),
-  delete: <T>(path: string)                => request<T>('DELETE', path),
+  get:         <T>(path: string)                => request<T>('GET',    path),
+  getBlob:     (path: string)                   => requestBlob(path),
+  post:        <T>(path: string, body: unknown) => request<T>('POST',   path, body),
+  put:         <T>(path: string, body: unknown) => request<T>('PUT',    path, body),
+  patch:       <T>(path: string, body?: unknown)=> request<T>('PATCH',  path, body),
+  delete:      <T>(path: string)                => request<T>('DELETE', path),
 };
 
 // ══════════════════════════════════════════════════════
@@ -167,15 +192,22 @@ export const importApi = {
     apiKey?: string;
   }) => {
     // Envoie le binaire XLSX + options en JSON dans le header custom
+    // buildAuthHeaders() garantit que le token Bearer est toujours présent
     const opts = encodeURIComponent(JSON.stringify(options));
     return fetch(`/api/projects/${projectId}/import-excel?opts=${opts}`, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
+        ...buildAuthHeaders(),
         ...(options.apiKey ? { 'x-api-key': options.apiKey } : {}),
       },
       body: fileBuffer,
     }).then(async (res) => {
+      if (res.status === 401) {
+        clearAuthState();
+        window.location.href = '/login';
+        throw new Error('Session expirée — veuillez vous reconnecter.');
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error || 'Erreur import');
@@ -509,12 +541,13 @@ export const kpisApi = {
 // P6 — Export documentaire
 // ══════════════════════════════════════════════════════
 export const exportApi = {
-  downloadCahierRecette: (projectId: number) =>
-    api.get<Blob>(`/api/projects/${projectId}/export/cahier-recette`),
-  downloadPlanTest: (projectId: number) =>
-    api.get<Blob>(`/api/projects/${projectId}/export/plan-test`),
+  // api.getBlob() utilisé pour les binaires DOCX — response.json() sur un binaire corrompait les fichiers
+  downloadCahierRecette:   (projectId: number) =>
+    api.getBlob(`/api/projects/${projectId}/export/cahier-recette`),
+  downloadPlanTest:        (projectId: number) =>
+    api.getBlob(`/api/projects/${projectId}/export/plan-test`),
   downloadRapportCampagne: (sessionId: number) =>
-    api.get<Blob>(`/api/sessions/${sessionId}/export/rapport`),
+    api.getBlob(`/api/sessions/${sessionId}/export/rapport`),
   getDocConfig: (projectId: number) =>
     api.get<ProjectDocConfig>(`/api/projects/${projectId}/doc-config`),
   saveDocConfig: (projectId: number, data: Partial<ProjectDocConfig>) =>
