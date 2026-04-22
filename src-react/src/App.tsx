@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Routes, Route, NavLink, Navigate, useLocation, Link } from 'react-router-dom';
 import { ProjectProvider, AuthProvider, useAuth } from './lib/hooks';
 import { Redaction } from './pages/Redaction';
 import { Dashboard } from './pages/Dashboard';
@@ -47,7 +47,7 @@ function TokenExpiresBanner() {
       <AlertTriangle size={13} />
       <span>
         Un token API expire dans <strong>{daysLeft} jour{daysLeft > 1 ? 's' : ''}</strong> ({new Date(expiresAt).toLocaleDateString('fr-FR')}).{' '}
-        <a href="/api-tokens" className="underline font-bold">Faire tourner le token →</a>
+        <Link to="/api-tokens" className="underline font-bold">Faire tourner le token →</Link>
       </span>
       <button
         className="ml-auto"
@@ -82,6 +82,19 @@ function Navigation() {
   );
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Fermer le menu au clic extérieur (onBlur ne fonctionne pas sur un div non focusable)
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [menuOpen]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : '');
@@ -131,26 +144,32 @@ function Navigation() {
         <NavLink to="/production-bugs" className={navLinkClass}>
           <span className="flex items-center gap-1"><Bug size={13} />Fuites prod.</span>
         </NavLink>
-        <NavLink to="/api-tokens" className={navLinkClass}>
-          <span className="flex items-center gap-1"><Key size={13} />API Tokens</span>
-        </NavLink>
-        <NavLink to="/cicd-docs" className={navLinkClass}>
-          <span className="flex items-center gap-1"><BookOpen size={13} />CI/CD</span>
-        </NavLink>
+        {(['key_user', 'cp', 'admin'] as string[]).includes(user?.role ?? '') && (
+          <NavLink to="/api-tokens" className={navLinkClass}>
+            <span className="flex items-center gap-1"><Key size={13} />API Tokens</span>
+          </NavLink>
+        )}
+        {(['key_user', 'cp', 'admin'] as string[]).includes(user?.role ?? '') && (
+          <NavLink to="/cicd-docs" className={navLinkClass}>
+            <span className="flex items-center gap-1"><BookOpen size={13} />CI/CD</span>
+          </NavLink>
+        )}
+        <NavLink to="/export" className={navLinkClass}>Export</NavLink>
+        {(user?.role === 'cp' || user?.role === 'admin') && (
           <NavLink to="/settings" className={navLinkClass}>
             <span className="flex items-center gap-1"><Settings size={13} />Paramètres</span>
           </NavLink>
-          <NavLink to="/export"        className={navLinkClass}>Export</NavLink>
-          {(user?.role === 'cp' || user?.role === 'admin') && (
-            <NavLink to="/users" className={navLinkClass}>
-              <span className="flex items-center gap-1"><UsersIcon size={13} />Utilisateurs</span>
-            </NavLink>
-          )}
-          {user?.role === 'admin' && (
-            <NavLink to="/audit-logs" className={navLinkClass}>
-              <span className="flex items-center gap-1"><ShieldCheck size={13} />Audit</span>
-            </NavLink>
-          )}
+        )}
+        {(user?.role === 'cp' || user?.role === 'admin') && (
+          <NavLink to="/users" className={navLinkClass}>
+            <span className="flex items-center gap-1"><UsersIcon size={13} />Utilisateurs</span>
+          </NavLink>
+        )}
+        {user?.role === 'admin' && (
+          <NavLink to="/audit-logs" className={navLinkClass}>
+            <span className="flex items-center gap-1"><ShieldCheck size={13} />Audit</span>
+          </NavLink>
+        )}
       </div>
 
       {/* Right: project + notifs + user */}
@@ -162,9 +181,9 @@ function Navigation() {
         </button>
 
         {/* User menu */}
-        <div className="relative">
+        <div className="relative" ref={menuRef}>
           <button
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={() => setMenuOpen(v => !v)}
             className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold transition-all"
             style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
           >
@@ -176,8 +195,7 @@ function Navigation() {
           </button>
           {menuOpen && (
             <div className="absolute right-0 top-9 w-48 rounded-lg overflow-hidden z-50"
-              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}
-              onBlur={() => setMenuOpen(false)}>
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
               <div className="px-4 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
                 <div className="text-xs font-semibold">{user?.display_name}</div>
                 <div className="text-[0.68rem]" style={{ color: 'var(--text-dim)' }}>@{user?.username}</div>
@@ -213,22 +231,23 @@ export default function App() {
               <TokenExpiresBanner />
               <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 20px' }}>
                   <Routes>
-                    <Route path="/"            element={<Redaction />} />
-                    <Route path="/dashboard"   element={<Dashboard />} />
-                    <Route path="/campagne"    element={<Campagne />} />
-                    <Route path="/import"      element={<Import />} />
-                    <Route path="/historique"  element={<Historique />} />
-                    <Route path="/tracabilite" element={<Tracabilite />} />
-                    <Route path="/clickup"     element={<ClickUp />} />
-                    <Route path="/comep"       element={<Comep />} />
-                    <Route path="/export"      element={<Export />} />
+                    <Route path="/"               element={<Redaction />} />
+                    <Route path="/dashboard"      element={<Dashboard />} />
+                    <Route path="/campagne"       element={<Campagne />} />
+                    <Route path="/import"         element={<Import />} />
+                    <Route path="/historique"     element={<Historique />} />
+                    <Route path="/tracabilite"    element={<Tracabilite />} />
+                    <Route path="/clickup"        element={<ClickUp />} />
+                    <Route path="/comep"          element={<Comep />} />
+                    <Route path="/export"         element={<Export />} />
                     <Route path="/production-bugs" element={<ProductionBugs />} />
-                    <Route path="/api-tokens" element={<ApiTokens />} />
-                    <Route path="/cicd-docs" element={<CiCdDocs />} />
-                    <Route path="/settings" element={<ProjectSettings />} />
-                    <Route path="/users"       element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
-                    <Route path="/audit-logs"  element={<RequireRole roles={['admin']}><AuditLogs /></RequireRole>} />
-                    <Route path="*"            element={<Navigate to="/" replace />} />
+                    {/* Routes restreintes par rôle */}
+                    <Route path="/api-tokens"     element={<RequireRole roles={['key_user', 'cp', 'admin']}><ApiTokens /></RequireRole>} />
+                    <Route path="/cicd-docs"      element={<RequireRole roles={['key_user', 'cp', 'admin']}><CiCdDocs /></RequireRole>} />
+                    <Route path="/settings"       element={<RequireRole roles={['cp', 'admin']}><ProjectSettings /></RequireRole>} />
+                    <Route path="/users"          element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
+                    <Route path="/audit-logs"     element={<RequireRole roles={['admin']}><AuditLogs /></RequireRole>} />
+                    <Route path="*"               element={<Navigate to="/" replace />} />
                   </Routes>
                 </main>
               </div>

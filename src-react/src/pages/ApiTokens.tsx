@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Key, Plus, Trash2, Copy, Check, AlertTriangle, Clock, Shield, ExternalLink, RefreshCw, History, GitBranch } from 'lucide-react';
 import { apiTokensApi, projectsApi } from '../lib/api';
 import type { ApiToken, ApiTokenCreated, Project, TriggerHistory } from '../types';
@@ -498,9 +499,9 @@ export function ApiTokens() {
         <ExternalLink size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
         <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
           Consultez la{' '}
-          <a href="/cicd-docs" className="underline" style={{ color: 'var(--accent)' }}>
+          <Link to="/cicd-docs" className="underline" style={{ color: 'var(--accent)' }}>
             documentation CI/CD
-          </a>{' '}
+          </Link>{' '}
           pour les exemples d'intégration GitHub Actions, Azure DevOps et GitLab CI.
         </div>
       </div>
