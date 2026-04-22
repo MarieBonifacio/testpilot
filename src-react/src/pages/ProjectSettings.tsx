@@ -67,15 +67,13 @@ export function ProjectSettings() {
   const downloadCahierRecette = async () => {
     if (!projectId) return;
     try {
-      const blob = await fetch(`/api/projects/${projectId}/export/cahier-recette`, {
-        headers: { Authorization: `Bearer ${JSON.parse(localStorage.getItem('testpilot_auth') || '{}').token}` }
-      }).then(r => r.blob());
+      const blob = await exportApi.downloadCahierRecette(projectId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `cahier-recette-${Date.now()}.docx`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -84,15 +82,13 @@ export function ProjectSettings() {
   const downloadPlanTest = async () => {
     if (!projectId) return;
     try {
-      const blob = await fetch(`/api/projects/${projectId}/export/plan-test`, {
-        headers: { Authorization: `Bearer ${JSON.parse(localStorage.getItem('testpilot_auth') || '{}').token}` }
-      }).then(r => r.blob());
+      const blob = await exportApi.downloadPlanTest(projectId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `plan-test-${Date.now()}.docx`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     } catch (e) {
       setError((e as Error).message);
     }

@@ -6,6 +6,7 @@ import {
   Bug, Plus, Pencil, Trash2, Link2, Link2Off,
   ChevronLeft, ChevronRight, AlertTriangle,
 } from 'lucide-react';
+import { Sparkline } from '../components/Sparkline';
 
 // ── Helpers ──────────────────────────────────────────
 const SEVERITY_LABEL: Record<string, string> = {
@@ -25,22 +26,6 @@ function leakColor(pct: number) {
 }
 
 // ── Sparkline SVG ────────────────────────────────────
-function Sparkline({ data, color }: { data: (number | null)[]; color: string }) {
-  const values = data.filter((v): v is number => v !== null);
-  if (values.length < 2) return <span style={{ color: 'var(--text-dim)', fontSize: '0.7rem' }}>—</span>;
-  const max = Math.max(...values, 1);
-  const W = 80, H = 28, pts = data.length;
-  const points = data
-    .map((v, i) => v !== null ? `${(i / (pts - 1)) * W},${H - (v / max) * H}` : null)
-    .filter(Boolean)
-    .join(' ');
-  return (
-    <svg width={W} height={H} style={{ display: 'block' }}>
-      <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />
-    </svg>
-  );
-}
-
 // ── Circular gauge ───────────────────────────────────
 function CircleGauge({ pct, size = 64 }: { pct: number; size?: number }) {
   const r = (size - 8) / 2;

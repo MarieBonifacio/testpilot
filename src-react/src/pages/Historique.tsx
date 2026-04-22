@@ -1,27 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { useProject } from '../lib/hooks';
-import { campaignsApi } from '../lib/api';
+import { campaignsApi, exportApi } from '../lib/api';
 import type { Campaign } from '../types';
 import { History, TrendingUp, TrendingDown, Minus, ChevronDown, ChevronRight, Calendar, Download } from 'lucide-react';
 
-/** Normalise les noms de colonnes backend → noms front uniformes */
-function normalize(c: Campaign): Required<Pick<Campaign,
-  'id'|'pass_rate'|'pass_count'|'fail_count'|'blocked_count'|'not_run_count'|'total_scenarios'|'campaign_name'|'archived_at'
->> & Campaign {
+/** Forme normalisée utilisée dans ce composant */
+interface NormalizedCampaign extends Campaign {
+  campaign_name: string;
+  pass_rate: number;
+  escape_rate?: number;
+  duration_minutes?: number;
+  archived_at: string; // garanti non-undefined après normalize()
+}
+
+/** Normalise les champs backend vers les noms utilisés dans ce composant */
+function normalize(c: Campaign): NormalizedCampaign {
   return {
     ...c,
-    campaign_name:   c.campaign_name   ?? c.name           ?? 'Campagne',
-    pass_rate:       c.pass_rate       ?? c.success_rate    ?? 0,
-    pass_count:      c.pass_count      ?? c.pass            ?? 0,
-    fail_count:      c.fail_count      ?? c.fail            ?? 0,
-    blocked_count:   c.blocked_count   ?? c.blocked         ?? 0,
-    not_run_count:   c.not_run_count   ?? c.skipped         ?? 0,
-    total_scenarios: c.total_scenarios ?? c.total           ?? 0,
-    escape_rate:     c.escape_rate     ?? c.leak_rate       ?? undefined,
-    duration_minutes: c.duration_minutes
-      ?? (c.duration_sec != null ? Math.round(c.duration_sec / 60) : undefined),
-    archived_at:     c.archived_at ?? c.finished_at ?? c.started_at ?? new Date().toISOString(),
-  } as ReturnType<typeof normalize>;
+    campaign_name:    c.name ?? 'Campagne',
+    pass_rate:        c.success_rate ?? 0,
+    pass_count:       c.pass_count   ?? 0,
+    fail_count:       c.fail_count   ?? 0,
+    blocked_count:    c.blocked_count ?? 0,
+    not_run_count:    c.not_run_count ?? 0,
+    total_scenarios:  c.total_scenarios ?? 0,
+    escape_rate:      c.leak_rate,
+    duration_minutes: c.duration_sec != null ? Math.round(c.duration_sec / 60) : undefined,
+    archived_at:      c.archived_at ?? c.finished_at ?? c.started_at ?? new Date().toISOString(),
+  };
 }
 
 export function Historique() {
@@ -252,17 +258,13 @@ export function Historique() {
                       onClick={async (e) => {
                         e.stopPropagation();
                         try {
-                          const res = await fetch(`/api/campaigns/${c.id}/export-rapport`, {
-                            headers: { Authorization: `Bearer ${JSON.parse(localStorage.getItem('testpilot_auth') || '{}').token}` }
-                          });
-                          if (!res.ok) throw new Error('Export failed');
-                          const blob = await res.blob();
+                          const blob = await exportApi.downloadRapportCampagne(c.id);
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement('a');
                           a.href = url;
                           a.download = `rapport-${c.id}.docx`;
                           a.click();
-                          URL.revokeObjectURL(url);
+                          setTimeout(() => URL.revokeObjectURL(url), 100);
                         } catch { /* ignore */ }
                       }}
                     >

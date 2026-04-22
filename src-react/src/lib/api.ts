@@ -246,18 +246,14 @@ export const traceabilityApi = {
 // P2.1 ClickUp
 // ══════════════════════════════════════════════════════
 export const clickupApi = {
-  /** Charge la config — mappe api_token → token pour usage front */
-  getConfig: async (projectId: number): Promise<ClickUpConfig> => {
-    const raw = await api.get<ClickUpConfig & { api_token?: string }>(
-      `/api/projects/${projectId}/clickup-config`
-    );
-    return { ...raw, token: raw.token ?? raw.api_token ?? '' };
-  },
+  /** Charge la config depuis le backend */
+  getConfig: (projectId: number): Promise<ClickUpConfig> =>
+    api.get<ClickUpConfig>(`/api/projects/${projectId}/clickup-config`),
 
-  /** Sauvegarde — renomme token → api_token pour le backend */
+  /** Sauvegarde la config */
   saveConfig: (projectId: number, data: ClickUpConfig) =>
     api.put<{ saved: boolean }>(`/api/projects/${projectId}/clickup-config`, {
-      api_token:        data.token ?? data.api_token,
+      api_token:        data.api_token,
       list_id:          data.list_id,
       tag_prefix:       data.tag_prefix,
       default_priority: data.default_priority,
@@ -265,10 +261,10 @@ export const clickupApi = {
       workspace_id:     data.workspace_id,
     }),
 
-  /** GET /api/clickup/lists?token=... — le backend attend un GET, pas un POST */
-  getLists: (token: string): Promise<ClickUpList[]> =>
-    fetch(`/api/clickup/lists?token=${encodeURIComponent(token)}`, {
-      headers: { Authorization: `Bearer ${(JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string }).token ?? ''}` },
+  /** GET /api/clickup/lists?token=... */
+  getLists: (token: string | undefined): Promise<ClickUpList[]> =>
+    fetch(`/api/clickup/lists?token=${encodeURIComponent(token ?? '')}`, {
+      headers: buildAuthHeaders(),
     }).then(async res => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -316,7 +312,7 @@ export const clickupApi = {
     return api.post<{ created: number; errors: number; results: unknown[] }>('/api/clickup/create-batch', {
       api_token:     payload.token,
       list_id:       payload.listId,
-      campaign_name: (campaign.name ?? campaign.campaign_name) ?? 'Campagne',
+      campaign_name: campaign.name ?? 'Campagne',
       tag_prefix:    payload.tagPrefix,
       items:         failedItems,
     });

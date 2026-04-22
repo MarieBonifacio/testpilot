@@ -29,6 +29,7 @@ export interface Scenario {
   source_reference?: string;
   /** Workflow P3.2 */
   validation_status?: 'draft' | 'submitted' | 'validated' | 'rejected';
+  rejection_reason?: string | null;
   assigned_to?: number | null;
   assignee_name?: string | null;
   created_at?: string;
@@ -85,34 +86,27 @@ export interface ImportPreviewRow {
 }
 
 // ── P1.2 Historique campagnes ────────────────────────
-// Champs backend (name/pass/fail/blocked/success_rate) + aliases front
 export interface Campaign {
   id: number;
   project_id: number;
-  name?: string;            // champ BDD réel
-  campaign_name?: string;   // alias front
+  /** Nom de la campagne — champ backend `name` */
+  name?: string;
   type?: string;
   started_at?: string;
   finished_at?: string;
   archived_at?: string;
-  total?: number;
   total_scenarios?: number;
-  pass?: number;
   pass_count?: number;
-  fail?: number;
   fail_count?: number;
-  blocked?: number;
   blocked_count?: number;
-  skipped?: number;
   not_run_count?: number;
   tnr_count?: number;
   tnr_pass?: number;
-  success_rate?: number;    // champ BDD réel
-  pass_rate?: number;       // alias front
-  leak_rate?: number;       // champ BDD réel
-  escape_rate?: number;     // alias front
+  /** Taux de succès (0-100) */
+  success_rate?: number;
+  /** Taux de fuite production (0-100) */
+  leak_rate?: number;
   duration_sec?: number;
-  duration_minutes?: number;
 }
 
 // ── P1.3 Traçabilité ─────────────────────────────────
@@ -138,10 +132,9 @@ export interface CoverageMatrixRow {
 
 
 // ── P2.1 ClickUp ─────────────────────────────────────
-// Le backend stocke "api_token" — on expose "token" côté front pour lisibilité
 export interface ClickUpConfig {
-  token?: string;       // alias front de api_token
-  api_token?: string;   // champ réel backend
+  /** Token API ClickUp — champ backend `api_token` */
+  api_token?: string;
   list_id?: string;
   tag_prefix?: string;
   default_priority?: number;

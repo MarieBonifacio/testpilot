@@ -40,11 +40,11 @@ export function ClickUp() {
   };
 
   const fetchLists = async () => {
-    if (!config.token) { setError('Token ClickUp manquant.'); return; }
+    if (!config.api_token) { setError('Token ClickUp manquant.'); return; }
     setLoadingLists(true);
     setError(null);
     try {
-      const data = await clickupApi.getLists(config.token);
+      const data = await clickupApi.getLists(config.api_token);
       setLists(data);
     } catch (err) {
       setError((err as Error).message);
@@ -69,7 +69,7 @@ export function ClickUp() {
   };
 
   const createBatch = async () => {
-    if (!projectId || !selectedCampaign || !config.list_id || !config.token) {
+    if (!projectId || !selectedCampaign || !config.list_id || !config.api_token) {
       setError('Configurez le token et la liste cible, puis sélectionnez une campagne.');
       return;
     }
@@ -81,7 +81,7 @@ export function ClickUp() {
         projectId,
         campaignId: Number(selectedCampaign),
         listId:  config.list_id,
-        token:   config.token,
+        token:   config.api_token,
         tagPrefix:       config.tag_prefix,
         defaultPriority: config.default_priority,
       });
@@ -124,11 +124,11 @@ export function ClickUp() {
               <input
                 type="password"
                 placeholder="pk_xxxxxxxxxxxxx"
-                value={config.token || ''}
-                onChange={(e) => setConfig({ ...config, token: e.target.value })}
+                value={config.api_token || ''}
+                onChange={(e) => setConfig({ ...config, api_token: e.target.value })}
                 className="flex-1"
               />
-              <button className="btn btn-secondary flex-shrink-0" onClick={fetchLists} disabled={loadingLists || !config.token}>
+              <button className="btn btn-secondary flex-shrink-0" onClick={fetchLists} disabled={loadingLists || !config.api_token}>
                 {loadingLists ? <div className="spinner" /> : <RefreshCw size={13} />}
                 Charger les listes
               </button>
@@ -203,7 +203,7 @@ export function ClickUp() {
                 <option value="">— Sélectionner une campagne —</option>
                 {campaigns.map(c => (
                   <option key={c.id} value={c.id}>
-                    {c.campaign_name} — {c.fail_count ?? 0} FAIL, {c.blocked_count ?? 0} BLOQUÉ
+                    {c.name ?? 'Campagne'} — {c.fail_count ?? 0} FAIL, {c.blocked_count ?? 0} BLOQUÉ
                     ({c.archived_at ? new Date(c.archived_at).toLocaleDateString('fr-FR') : ''})
                   </option>
                 ))}
@@ -211,7 +211,7 @@ export function ClickUp() {
             </div>
 
             <button className="btn btn-primary" onClick={createBatch}
-              disabled={loadingBatch || !selectedCampaign || !config.list_id || !config.token}>
+              disabled={loadingBatch || !selectedCampaign || !config.list_id || !config.api_token}>
               {loadingBatch ? <div className="spinner" /> : <Send size={14} />}
               {loadingBatch ? 'Création en cours…' : 'Créer les tickets ClickUp'}
             </button>

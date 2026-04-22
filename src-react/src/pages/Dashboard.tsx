@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useProject } from '../lib/hooks';
-import { projectsApi, scenariosApi, campaignsApi, productionBugsApi, kpisApi } from '../lib/api';
+import { projectsApi, scenariosApi, campaignsApi, productionBugsApi, kpisApi, exportApi } from '../lib/api';
+import { Sparkline } from '../components/Sparkline';
 import type { Scenario, LeakRateKPI, TnrDurationKPI, FlakinessKPI } from '../types';
 import { CheckCircle, Circle, ChevronDown, ChevronRight, BarChart3, TrendingUp, TrendingDown, Minus, Bug, Timer, Activity, Download } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
@@ -143,15 +144,13 @@ export function Dashboard() {
   const downloadCahierRecette = async () => {
     if (!projectId) return;
     try {
-      const blob = await fetch(`/api/projects/${projectId}/export/cahier-recette`, {
-        headers: { Authorization: `Bearer ${JSON.parse(localStorage.getItem('testpilot_auth') || '{}').token}` }
-      }).then(r => r.blob());
+      const blob = await exportApi.downloadCahierRecette(projectId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `cahier-recette-${projectId}.docx`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     } catch { /* ignore */ }
   };
 
@@ -290,21 +289,13 @@ export function Dashboard() {
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}>non couverts</div>
               </div>
             </div>
-            {/* Sparkline */}
+            {/* Sparkline — composant partagé avec ProductionBugs */}
             {leakKpi.trend_30d.some(v => v !== null) && (
               <div className="flex-shrink-0 flex flex-col items-end gap-1">
-                <svg width={100} height={30} style={{ display: 'block' }}>
-                  {(() => {
-                    const vals = leakKpi.trend_30d;
-                    const maxV = Math.max(...vals.filter((v): v is number => v !== null), 1);
-                    const pts = vals.length;
-                    const points = vals
-                      .map((v, i) => v !== null ? `${(i / (pts - 1)) * 100},${30 - (v / maxV) * 28}` : null)
-                      .filter(Boolean).join(' ');
-                    const color = leakKpi.leak_rate_percent <= 10 ? 'var(--success)' : leakKpi.leak_rate_percent <= 25 ? 'var(--warning)' : 'var(--danger)';
-                    return <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} />;
-                  })()}
-                </svg>
+                <Sparkline
+                  data={leakKpi.trend_30d}
+                  color={leakKpi.leak_rate_percent <= 10 ? 'var(--success)' : leakKpi.leak_rate_percent <= 25 ? 'var(--warning)' : 'var(--danger)'}
+                />
                 <span className="text-[0.65rem]" style={{ color: 'var(--text-dim)' }}>tendance 30j</span>
               </div>
             )}
