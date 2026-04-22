@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useProject, useAuth } from '../lib/hooks';
-import { scenariosApi, analysesApi, usersApi } from '../lib/api';
+import { scenariosApi, analysesApi, usersApi, llmApi } from '../lib/api';
 import type { Scenario, Analysis, User } from '../types';
 import { Play, CheckCircle, Download, Trash2, UserCheck, ShieldCheck, XCircle, Send, RefreshCw } from 'lucide-react';
 
@@ -129,28 +129,21 @@ export function Redaction() {
     localStorage.setItem('testpilot_provider', JSON.stringify(toSave));
   }, [providerSettings, currentProvider]);
 
-  // Check Ollama health and fetch installed models
+  // Check Ollama health and fetch installed models — délégué à llmApi (pas de duplication)
   const checkOllama = useCallback(async () => {
     const host = providerSettings.ollama.host || 'http://localhost:11434';
     setOllamaChecking(true);
     setOllamaStatus('unknown');
     try {
-      const auth = JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string };
-      const headers: Record<string, string> = {};
-      if (auth.token) headers['Authorization'] = `Bearer ${auth.token}`;
-      const res = await fetch(`/api/ollama/health?host=${encodeURIComponent(host)}`, { headers });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (data.ok) {
+      const health = await llmApi.checkOllamaHealth(host);
+      if (health.ok) {
         setOllamaStatus('ok');
-        const mRes = await fetch(`/api/ollama/models?host=${encodeURIComponent(host)}`, { headers });
-        if (mRes.ok) {
-          const mData = await mRes.json() as { models: string[] };
-          if (mData.models.length > 0) {
-            setOllamaModels(mData.models);
-            const curModel = providerSettings.ollama.model;
-            if (!mData.models.includes(curModel) && curModel !== '__custom__') {
-              setProviderSettings(prev => ({ ...prev, ollama: { ...prev.ollama, model: mData.models[0] } }));
-            }
+        const models = await llmApi.getOllamaModels(host).catch(() => [] as string[]);
+        if (models.length > 0) {
+          setOllamaModels(models);
+          const curModel = providerSettings.ollama.model;
+          if (!models.includes(curModel) && curModel !== '__custom__') {
+            setProviderSettings(prev => ({ ...prev, ollama: { ...prev.ollama, model: models[0] } }));
           }
         }
       } else {
@@ -165,7 +158,7 @@ export function Redaction() {
 
   useEffect(() => {
     if (currentProvider === 'ollama') checkOllama();
-  }, [currentProvider]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentProvider, checkOllama]);
 
   const buildPrompt = () => {
     const typeLabels: Record<SourceType, string> = {
@@ -221,96 +214,22 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
 }`;
   };
 
-  const callLLM = async (prompt: string) => {
-    const provider = PROVIDERS[currentProvider];
-    const settings = providerSettings[currentProvider];
-    const model = settings.model === '__custom__' ? (settings.modelCustom || '') : settings.model;
-
-    if (provider.needsKey && !settings.key) throw new Error(`Clé API ${provider.label} manquante.`);
-    if (!model) throw new Error('Aucun modèle sélectionné.');
-
-    const auth = JSON.parse(localStorage.getItem('testpilot_auth') || '{}') as { token?: string };
-    const bearerHeader = auth.token ? { Authorization: `Bearer ${auth.token}` } : {} as Record<string, string>;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90_000);
-
-    try {
-      if (currentProvider === 'anthropic') {
-        // Via proxy backend /api/messages — la clé est transmise en header côté serveur
-        const res = await fetch('/api/messages', {
-          signal: controller.signal,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': settings.key,
-            'anthropic-version': '2023-06-01',
-            ...bearerHeader,
-          },
-          body: JSON.stringify({ model, max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }),
-        });
-        if (!res.ok) {
-          const e = await res.json().catch(() => ({})) as { error?: { message?: string } };
-          throw new Error(e.error?.message || `Erreur Anthropic ${res.status}`);
-        }
-        const data = await res.json() as { content: { type: string; text: string }[] };
-        return data.content.filter(b => b.type === 'text').map(b => b.text).join('');
-      }
-
-      if (currentProvider === 'ollama') {
-        // Via proxy backend /api/ollama/chat — never direct browser → Ollama
-        const res = await fetch('/api/ollama/chat', {
-          signal: controller.signal,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...bearerHeader },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.2,
-            host: settings.host || 'http://localhost:11434',
-          }),
-        });
-        if (!res.ok) {
-          const e = await res.json().catch(() => ({})) as { error?: string; hint?: string };
-          const hint = e.hint ? `\n${e.hint}` : '';
-          throw new Error((e.error || `Erreur Ollama ${res.status}`) + hint);
-        }
-        const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-        return data.choices?.[0]?.message?.content || '';
-      }
-
-      // OpenAI / Mistral — appel direct depuis le navigateur (clé obligatoire)
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (provider.needsKey) headers['Authorization'] = `Bearer ${settings.key}`;
-      const res = await fetch(settings.endpoint, {
-        signal: controller.signal,
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2 }),
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({})) as { error?: { message?: string } };
-        throw new Error(e.error?.message || `Erreur ${provider.label} ${res.status}`);
-      }
-      const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-      return data.choices?.[0]?.message?.content || '';
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw new Error("Délai dépassé — pas de réponse de l'API après 90 secondes.");
-      }
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  };
-
   const generate = async () => {
     setError(null);
     if (!projectId) { setError('Veuillez sélectionner un projet.'); return; }
     if (!sourceText.trim()) { setError('Veuillez entrer une description.'); return; }
     setLoading(true);
+    // Timeout 90s via AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90_000);
     try {
-      const raw = await callLLM(buildPrompt());
+      const settings = providerSettings[currentProvider];
+      const model = settings.model === '__custom__' ? (settings.modelCustom || '') : settings.model;
+      // llmApi.call avec providerOverride pour utiliser les settings du state React
+      const raw = await llmApi.call(buildPrompt(), {
+        signal: controller.signal,
+        providerOverride: { provider: currentProvider, ...settings, model },
+      });
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('Réponse IA invalide — JSON introuvable.');
       const parsed = JSON.parse(match[0]) as {
@@ -345,6 +264,7 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
     } catch (err) {
       setError((err as Error).message || 'Erreur lors de la génération.');
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -367,7 +287,8 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url;
     a.download = `testpilot-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click(); URL.revokeObjectURL(url);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const acceptedCount = scenarios.filter(s => s.accepted).length;

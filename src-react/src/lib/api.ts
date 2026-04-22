@@ -396,16 +396,31 @@ export const llmApi = {
   },
 
   /**
-   * Call an LLM using the provider settings in localStorage (testpilot_provider).
-   * Ollama is proxied through /api/ollama/chat; Anthropic through /api/messages.
-   * OpenAI and Mistral are called directly from the browser.
+   * Call an LLM using the provider settings.
+   * - Si `opts.providerOverride` est fourni, il est utilisé directement (ex: depuis Redaction.tsx).
+   * - Sinon, les settings sont lus depuis localStorage (testpilot_provider).
+   * Ollama est proxifié via /api/ollama/chat; Anthropic via /api/messages.
+   * OpenAI et Mistral sont appelés directement depuis le navigateur.
    */
-  call: async (prompt: string, opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {}): Promise<string> => {
-    const stored = localStorage.getItem('testpilot_provider');
-    const all = stored ? JSON.parse(stored) as Record<string, { key?: string; model?: string; endpoint?: string; host?: string; modelCustom?: string }> : {};
-    const provider = (all._current as string | undefined) ?? 'anthropic';
-    const s = all[provider] ?? {};
-    const model = s.model === '__custom__' ? (s.modelCustom ?? '') : (s.model ?? '');
+  call: async (prompt: string, opts: {
+    maxTokens?: number;
+    temperature?: number;
+    signal?: AbortSignal;
+    providerOverride?: { provider: string; key?: string; model?: string; endpoint?: string; host?: string };
+  } = {}): Promise<string> => {
+    let provider: string;
+    let s: { key?: string; model?: string; endpoint?: string; host?: string; modelCustom?: string };
+
+    if (opts.providerOverride) {
+      provider = opts.providerOverride.provider;
+      s = opts.providerOverride;
+    } else {
+      const stored = localStorage.getItem('testpilot_provider');
+      const all = stored ? JSON.parse(stored) as Record<string, { key?: string; model?: string; endpoint?: string; host?: string; modelCustom?: string }> : {};
+      provider = (all._current as string | undefined) ?? 'anthropic';
+      s = all[provider] ?? {};
+    }
+    const model = (s.model === '__custom__' ? (s.modelCustom ?? '') : (s.model ?? '')).trim();
     const auth = getAuthState();
     const bearerHeader = auth.token ? { Authorization: `Bearer ${auth.token}` } : {} as Record<string, string>;
     const temperature = opts.temperature ?? 0.2;
