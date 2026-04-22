@@ -24,10 +24,10 @@
   --text-muted: #8b93a7;
   --text-dim:   #5a6378;
 
-  /* Accent (bleu-lavande prompt-library) */
-  --accent:       #7aa2f7;
-  --accent-hover: #9bb8ff;
-  --accent-bg:    rgba(122, 162, 247, 0.12);
+  /* Accent (vert forêt profond) */
+  --accent:       #2d7a4a;
+  --accent-hover: #3d9a5a;
+  --accent-bg:    rgba(45, 122, 74, 0.12);
 
   /* Sémantiques */
   --success:    #9ece6a;
@@ -76,9 +76,9 @@
   --text-muted: #6b7394;
   --text-dim:   #9ba3bb;
 
-  --accent:       #4a7cf7;
-  --accent-hover: #2f66f5;
-  --accent-bg:    rgba(74, 124, 247, 0.08);
+   --accent:       #1f5a36;
+   --accent-hover: #2d7a4a;
+   --accent-bg:    rgba(31, 90, 54, 0.08);
 
   --success:    #3d9e30;
   --success-bg: rgba(61, 158, 48, 0.1);
