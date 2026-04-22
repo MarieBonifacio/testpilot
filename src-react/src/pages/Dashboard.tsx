@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useProject } from '../lib/hooks';
 import { projectsApi, scenariosApi, campaignsApi, productionBugsApi, kpisApi, exportApi } from '../lib/api';
 import { Sparkline } from '../components/Sparkline';
@@ -36,14 +36,14 @@ export function Dashboard() {
   const [leakKpi, setLeakKpi]     = useState<LeakRateKPI | null>(null);
   const [tnrKpi, setTnrKpi]       = useState<TnrDurationKPI | null>(null);
   const [flakinessKpi, setFlakinessKpi] = useState<FlakinessKPI | null>(null);
+  // AbortController pour annuler les requêtes si le projet change pendant le chargement
+  const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!projectId) return;
-    loadData();
-  }, [projectId]);
-
-  const loadData = async () => {
-    if (!projectId) return;
+    // Annuler le chargement précédent
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
     setLoading(true);
     try {
       const [scenarios, projectStats, kpisData, leakData, tnrData, flakyData] = await Promise.all([
@@ -85,11 +85,19 @@ export function Dashboard() {
 
       setFeatures(featureStats.sort((a, b) => b.total - a.total));
     } catch (err) {
-      console.error('Error loading dashboard:', err);
+      if (err instanceof Error && err.name !== 'AbortError') {
+        console.error('Error loading dashboard:', err);
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    loadData();
+    return () => abortRef.current?.abort();
+  }, [projectId, loadData]);
 
   const toggleExpand = (name: string) => {
     const next = new Set(expanded);

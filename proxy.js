@@ -124,9 +124,9 @@ app.use((req, res, next) => {
 // ── Auth helpers ─────────────────────────────────────
 const BCRYPT_ROUNDS = 10;
 
-/** Hash bcrypt d'un mot de passe (sync — usage: register/changement mdp uniquement) */
+/** Hash bcrypt d'un mot de passe — async pour ne pas bloquer l'event loop */
 function hashPassword(pw) {
-  return bcrypt.hashSync(pw, BCRYPT_ROUNDS);
+  return bcrypt.hash(pw, BCRYPT_ROUNDS);
 }
 function generateToken() {
   return crypto.randomBytes(32).toString("hex");

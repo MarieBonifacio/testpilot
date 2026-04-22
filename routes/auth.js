@@ -38,10 +38,10 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
   // ── POST /api/auth/register ───────────────────────────
   // Premier lancement : si aucun user en BDD, création libre (bootstrap admin)
   // Ensuite : accessible uniquement aux admins connectés
-  router.post("/api/auth/register", validate.user, audit.authAction(db, 'user.register'), (req, res) => {
+  router.post("/api/auth/register", validate.user, audit.authAction(db, 'user.register'), async (req, res) => {
     const { username, password, display_name, role, email } = req.body;
     // Validation handled by validate.user middleware
-    db.get("SELECT COUNT(*) AS cnt FROM users", [], (err, row) => {
+    db.get("SELECT COUNT(*) AS cnt FROM users", [], async (err, row) => {
       if (err) return res.status(500).json({ error: err.message });
       const isFirstUser = (row.cnt === 0);
       // Si déjà des utilisateurs en BDD → exiger admin
@@ -50,7 +50,8 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
       }
       const allowedRoles = ["automaticien", "cp", "key_user", "admin"];
       const userRole = allowedRoles.includes(role) ? role : "automaticien";
-      const hash = hashPassword(password);
+      // hashPassword est async (bcrypt.hash) — ne bloque pas l'event loop
+      const hash = await hashPassword(password);
       db.run(
         "INSERT INTO users (username, password_hash, display_name, role, email) VALUES (?, ?, ?, ?, ?)",
         [username, hash, display_name, userRole, email || null],
@@ -80,10 +81,13 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
         return res.status(401).json({ error: "Identifiants incorrects" });
       }
 
-      // Upgrade silencieux SHA-256 → bcrypt si nécessaire
+      // Upgrade silencieux SHA-256 → bcrypt si nécessaire (async, fire-and-forget avec log d'erreur)
       if (isSha256Hash(user.password_hash)) {
-        const newHash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
-        db.run("UPDATE users SET password_hash = ? WHERE id = ?", [newHash, user.id]);
+        bcrypt.hash(password, BCRYPT_ROUNDS).then(newHash => {
+          db.run("UPDATE users SET password_hash = ? WHERE id = ?", [newHash, user.id], (upgradeErr) => {
+            if (upgradeErr) console.error(`⚠  Échec upgrade bcrypt user ${user.id}:`, upgradeErr.message);
+          });
+        }).catch(err => console.error("⚠  Erreur bcrypt upgrade:", err.message));
       }
 
       const token = generateToken();
@@ -131,7 +135,7 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
   });
 
   // ── PUT /api/users/:id ────────────────────────────────
-  router.put("/api/users/:id", requireAuth, (req, res) => {
+  router.put("/api/users/:id", requireAuth, async (req, res) => {
     const { display_name, role, email, password } = req.body;
     const isSelf  = req.currentUser.id === parseInt(req.params.id);
     const isAdmin = req.currentUser.role === "admin";
@@ -147,7 +151,8 @@ module.exports = function createAuthRouter(db, hashPassword, generateToken, requ
 
     let sql, params;
     if (password) {
-      const hash = hashPassword(password);
+      // hashPassword est async — await obligatoire
+      const hash = await hashPassword(password);
       sql = "UPDATE users SET display_name=?, role=?, email=?, password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=?";
       params = [display_name, role, email || null, hash, req.params.id];
     } else {

@@ -221,21 +221,25 @@ const db = new sqlite3.Database(dbPath, (err) => {
           `CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at)`
         ];
 
-        let pending = migrations.length;
-        migrations.forEach(sql => {
-          db.run(sql, (err) => {
-            if (err && !err.message.includes('duplicate column') && !err.message.includes('already exists')) {
-              console.warn('Migration warning:', err.message);
-            }
-            pending--;
-            if (pending === 0) {
-              if (!dbExists) {
-                console.log('Database created with default Carter-Cash projects');
-              } else {
-                console.log('Database already existed, migrations applied');
+        // db.serialize garantit l'ordre d'exécution des migrations (sqlite3 sérialise déjà en interne
+        // mais serialize() rend cette dépendance explicite et robuste)
+        db.serialize(() => {
+          let pending = migrations.length;
+          migrations.forEach(sql => {
+            db.run(sql, (err) => {
+              if (err && !err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+                console.warn('Migration warning:', err.message);
               }
-              db.close();
-            }
+              pending--;
+              if (pending === 0) {
+                if (!dbExists) {
+                  console.log('Database created with default Carter-Cash projects');
+                } else {
+                  console.log('Database already existed, migrations applied');
+                }
+                db.close();
+              }
+            });
           });
         });
       }

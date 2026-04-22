@@ -9,6 +9,7 @@ export function ProjectSelector() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     projectsApi.list().then(setProjects).catch(console.error).finally(() => setLoading(false));
@@ -20,13 +21,14 @@ export function ProjectSelector() {
   };
 
   const handleCreateProject = async (data: Partial<Project>) => {
+    setCreateError(null);
     try {
       const created = await projectsApi.create(data);
-      setProjects([...projects, created]);
+      setProjects(prev => [...prev, created]);
       setProjectId(created.id);
       setShowModal(false);
     } catch (err) {
-      alert('Erreur: ' + (err as Error).message);
+      setCreateError((err as Error).message);
     }
   };
 
@@ -56,7 +58,7 @@ export function ProjectSelector() {
         ))}
       </select>
       <button
-        onClick={() => setShowModal(true)}
+        onClick={() => { setShowModal(true); setCreateError(null); }}
         className="btn-icon"
         title="Nouveau projet"
       >
@@ -64,26 +66,40 @@ export function ProjectSelector() {
       </button>
 
       {showModal && (
-        <NewProjectModal onSave={handleCreateProject} onClose={() => setShowModal(false)} />
+        <NewProjectModal
+          onSave={handleCreateProject}
+          onClose={() => { setShowModal(false); setCreateError(null); }}
+          error={createError}
+        />
       )}
     </div>
   );
 }
 
-function NewProjectModal({ onSave, onClose }: { onSave: (data: Partial<Project>) => void; onClose: () => void }) {
+function NewProjectModal({
+  onSave,
+  onClose,
+  error,
+}: {
+  onSave: (data: Partial<Project>) => void;
+  onClose: () => void;
+  error: string | null;
+}) {
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
   const [techStack, setTechStack] = useState('');
   const [domain, setDomain] = useState('');
   const [desc, setDesc] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) { alert('Le nom du projet est requis'); return; }
+    if (!name.trim()) {
+      setNameError('Le nom du projet est requis');
+      return;
+    }
+    setNameError(null);
     onSave({ name: name.trim(), tech_stack: techStack.trim(), business_domain: domain.trim(), description: desc.trim() });
   };
-
-  const fieldStyle = { marginBottom: '16px' } as React.CSSProperties;
-  const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' } as React.CSSProperties;
 
   return (
     <div
@@ -97,24 +113,34 @@ function NewProjectModal({ onSave, onClose }: { onSave: (data: Partial<Project>)
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-base font-bold mb-5" style={{ color: 'var(--accent)' }}>Nouveau projet</h3>
-        <form onSubmit={handleSubmit}>
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Nom du projet *</label>
-            <input type="text" placeholder="Ex: ATHENA, Module Commandes…" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>
+              Nom du projet *
+            </label>
+            <input
+              type="text"
+              placeholder="Ex: ATHENA, Module Commandes…"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+            />
+            {nameError && <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>{nameError}</p>}
           </div>
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Stack technique</label>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Stack technique</label>
             <input type="text" placeholder="Ex: .NET 4.8 (C#), Python/Robocorp…" value={techStack} onChange={(e) => setTechStack(e.target.value)} />
           </div>
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Domaine métier</label>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Domaine métier</label>
             <input type="text" placeholder="Ex: Encaissement, E-commerce…" value={domain} onChange={(e) => setDomain(e.target.value)} />
           </div>
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Description</label>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Description</label>
             <textarea rows={3} placeholder="Description optionnelle…" value={desc} onChange={(e) => setDesc(e.target.value)} style={{ minHeight: 'unset' }} />
           </div>
-          <div className="flex justify-end gap-2 mt-2">
+          {error && <div className="error-msg">{error}</div>}
+          <div className="flex justify-end gap-2 pt-1">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn btn-primary">Créer</button>
           </div>
