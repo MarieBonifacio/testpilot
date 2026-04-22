@@ -1754,20 +1754,14 @@ app.post("/api/trigger", triggerLimiter);
 app.use(createAuthRouter(db, hashPassword, generateToken, requireAuth, requireCP));
 
 // ══════════════════════════════════════════════════════
-// ██  STATIC FILES
-// ══════════════════════════════════════════════════════
-
-// Fichiers statiques React (build Vite)
-const reactDist = path.join(__dirname, "src-react", "dist");
-if (fs.existsSync(reactDist)) {
-  app.use(express.static(reactDist));
-}
-
-// ══════════════════════════════════════════════════════
 // ██  P5.1 — API TOKENS / CI/CD  → routes/cicd.js
 // ══════════════════════════════════════════════════════
 
 app.use(createCicdRouter(db, requireAuth, generateApiToken, hashApiToken));
+
+// ══════════════════════════════════════════════════════
+// ██  STATIC FILES — Legacy HTML first, then React SPA
+// ══════════════════════════════════════════════════════
 
 // Pages HTML vanilla (ancienne interface) — uniquement les .html et assets CSS/JS explicites
 app.use(express.static(__dirname, {
@@ -1782,6 +1776,17 @@ app.use(express.static(__dirname, {
     }
   },
 }));
+
+// Fichiers statiques React (build Vite) — servi EN DERNIER comme fallback SPA
+// Toute route inconnue → index.html (React Router gère le routing)
+const reactDist = path.join(__dirname, "src-react", "dist");
+if (fs.existsSync(reactDist)) {
+  app.use(express.static(reactDist));
+  // SPA fallback : routes inconnues → /index.html (via middleware, pas app.get)
+  app.use((req, res) => {
+    res.sendFile(path.join(reactDist, "index.html"));
+  });
+}
 
 // ══════════════════════════════════════════════════════
 // ██  P6 — EXPORT DOCUMENTAIRE  → routes/export.js
