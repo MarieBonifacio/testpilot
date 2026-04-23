@@ -13,6 +13,7 @@ import type {
   ApiToken, ApiTokenCreated, TriggerHistory,
   ProjectDocConfig,
   AuditLog,
+  UserStory, CreateUserStoryPayload, UpdateUserStoryPayload,
 } from '../types';
 
 const BASE_URL = '';
@@ -659,4 +660,48 @@ export const auditApi = {
     const q = qs.toString() ? `?${qs.toString()}` : '';
     return api.get<{ logs: AuditLog[]; total: number }>(`/api/admin/audit-logs${q}`);
   },
+};
+
+// ══════════════════════════════════════════════════════
+// P9.1 — User Stories
+// ══════════════════════════════════════════════════════
+export const userStoriesApi = {
+  // Liste toutes les user stories d'un projet
+  list: (projectId: number, filters?: { status?: string; priority?: string; epic?: string }) => {
+    const qs = new URLSearchParams();
+    if (filters?.status) qs.set('status', filters.status);
+    if (filters?.priority) qs.set('priority', filters.priority);
+    if (filters?.epic) qs.set('epic', filters.epic);
+    const q = qs.toString() ? `?${qs.toString()}` : '';
+    return api.get<UserStory[]>(`/api/projects/${projectId}/user-stories${q}`);
+  },
+
+  // Récupère une user story par ID
+  get: (id: number) =>
+    api.get<UserStory>(`/api/user-stories/${id}`),
+
+  // Crée une nouvelle user story
+  create: (projectId: number, data: CreateUserStoryPayload) =>
+    api.post<UserStory>(`/api/projects/${projectId}/user-stories`, data),
+
+  // Met à jour une user story
+  update: (id: number, data: UpdateUserStoryPayload) =>
+    api.put<UserStory>(`/api/user-stories/${id}`, data),
+
+  // Supprime une user story
+  delete: (id: number) =>
+    api.delete<{ deleted: boolean; id: number }>(`/api/user-stories/${id}`),
+
+  // Lie un scénario à une user story
+  linkScenario: (storyId: number, scenarioId: number) =>
+    api.post<{ linked: boolean; user_story_id: number; scenario_id: number }>(
+      `/api/user-stories/${storyId}/link-scenario`,
+      { scenario_id: scenarioId }
+    ),
+
+  // Délie un scénario d'une user story
+  unlinkScenario: (storyId: number, scenarioId: number) =>
+    api.delete<{ unlinked: boolean; user_story_id: number; scenario_id: number }>(
+      `/api/user-stories/${storyId}/unlink-scenario/${scenarioId}`
+    ),
 };

@@ -218,7 +218,49 @@ const db = new sqlite3.Database(dbPath, (err) => {
           )`,
           `CREATE INDEX IF NOT EXISTS idx_audit_logs_user    ON audit_logs(user_id)`,
           `CREATE INDEX IF NOT EXISTS idx_audit_logs_action  ON audit_logs(action)`,
-          `CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at)`
+          `CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at)`,
+          // P9.1 : Table user_stories (génération user stories avec critères d'acceptation)
+          `CREATE TABLE IF NOT EXISTS user_stories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            epic TEXT,
+            priority TEXT CHECK(priority IN ('high', 'medium', 'low')) DEFAULT 'medium',
+            story_points INTEGER,
+            status TEXT CHECK(status IN ('draft', 'ready', 'in_progress', 'done')) DEFAULT 'draft',
+            created_by INTEGER,
+            assigned_to INTEGER,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_user_stories_project ON user_stories(project_id)`,
+          `CREATE INDEX IF NOT EXISTS idx_user_stories_status  ON user_stories(status)`,
+          // P9.2 : Table critères d'acceptation (1-N avec user_stories)
+          `CREATE TABLE IF NOT EXISTS user_story_criteria (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_story_id INTEGER NOT NULL,
+            criterion TEXT NOT NULL,
+            display_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_criteria_user_story ON user_story_criteria(user_story_id)`,
+          // P9.3 : Table de liaison user_stories <-> scenarios (many-to-many)
+          `CREATE TABLE IF NOT EXISTS user_story_scenarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_story_id INTEGER NOT NULL,
+            scenario_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_story_id) REFERENCES user_stories(id) ON DELETE CASCADE,
+            FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+            UNIQUE(user_story_id, scenario_id)
+          )`,
+          `CREATE INDEX IF NOT EXISTS idx_us_scenarios_us       ON user_story_scenarios(user_story_id)`,
+          `CREATE INDEX IF NOT EXISTS idx_us_scenarios_scenario ON user_story_scenarios(scenario_id)`
         ];
 
         // db.serialize garantit l'ordre d'exécution des migrations (sqlite3 sérialise déjà en interne
