@@ -89,7 +89,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     ...buildAuthHeaders(),
   };
 
-  const options: RequestInit = { method, headers };
+  const options: RequestInit = { method, headers, cache: 'no-store' };
   if (body) options.body = JSON.stringify(body);
 
   const response = await fetch(BASE_URL + path, options);
