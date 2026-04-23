@@ -42,6 +42,91 @@ module.exports = function createCampaignsRouter(db, requireAuth, docGenerator) {
     });
   });
 
+  // POST /api/projects — Créer un nouveau projet
+  router.post("/api/projects", requireAuth, (req, res) => {
+    const { name, tech_stack, business_domain, description } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: "Le nom du projet est requis" });
+    }
+    const trimmedName = String(name).trim();
+    db.run(
+      `INSERT INTO projects (name, tech_stack, business_domain, description)
+       VALUES (?, ?, ?, ?)`,
+      [trimmedName, tech_stack || null, business_domain || null, description || null],
+      function (err) {
+        if (err) {
+          if (err.message.includes("UNIQUE constraint failed")) {
+            return res.status(409).json({ error: `Un projet nommé "${trimmedName}" existe déjà` });
+          }
+          return res.status(500).json({ error: err.message });
+        }
+        db.get(
+          `SELECT p.*, 0 as scenario_count, 0 as accepted_count FROM projects p WHERE p.id = ?`,
+          [this.lastID],
+          (err2, row) => {
+            if (err2) return res.status(500).json({ error: err2.message });
+            res.status(201).json(row);
+          }
+        );
+      }
+    );
+  });
+
+  // PUT /api/projects/:id — Mettre à jour un projet
+  router.put("/api/projects/:id", requireAuth, (req, res) => {
+    const projectId = parseInt(req.params.id, 10);
+    if (isNaN(projectId)) return res.status(400).json({ error: "ID projet invalide" });
+
+    const { name, tech_stack, business_domain, description } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: "Le nom du projet est requis" });
+    }
+    const trimmedName = String(name).trim();
+    db.run(
+      `UPDATE projects SET name = ?, tech_stack = ?, business_domain = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [trimmedName, tech_stack || null, business_domain || null, description || null, projectId],
+      function (err) {
+        if (err) {
+          if (err.message.includes("UNIQUE constraint failed")) {
+            return res.status(409).json({ error: `Un projet nommé "${trimmedName}" existe déjà` });
+          }
+          return res.status(500).json({ error: err.message });
+        }
+        if (this.changes === 0) return res.status(404).json({ error: `Projet ${projectId} non trouvé` });
+        db.get(
+          `SELECT p.*,
+                  (SELECT COUNT(*) FROM scenarios WHERE project_id = p.id) as scenario_count,
+                  (SELECT COUNT(*) FROM scenarios WHERE project_id = p.id AND accepted = 1) as accepted_count
+           FROM projects p WHERE p.id = ?`,
+          [projectId],
+          (err2, row) => {
+            if (err2) return res.status(500).json({ error: err2.message });
+            res.json(row);
+          }
+        );
+      }
+    );
+  });
+
+  // DELETE /api/projects/:id — Supprimer un projet (admin/cp uniquement)
+  router.delete("/api/projects/:id", requireAuth, (req, res) => {
+    const projectId = parseInt(req.params.id, 10);
+    if (isNaN(projectId)) return res.status(400).json({ error: "ID projet invalide" });
+
+    // Vérification rôle : cp ou admin uniquement
+    const role = req.currentUser?.role;
+    if (!["cp", "admin"].includes(role)) {
+      return res.status(403).json({ error: "Droits insuffisants pour supprimer un projet" });
+    }
+
+    db.run(`DELETE FROM projects WHERE id = ?`, [projectId], function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: `Projet ${projectId} non trouvé` });
+      res.status(204).end();
+    });
+  });
+
   // GET /api/campaigns/:id/export-rapport — exporter le rapport d'une campagne archivée
   router.get('/api/campaigns/:id/export-rapport', requireAuth, async (req, res) => {
     const campaignId = parseInt(req.params.id);

@@ -100,6 +100,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new Error(error.error || 'Erreur API');
   }
 
+  // 204 No Content ou body vide → ne pas tenter de parser du JSON
+  if (response.status === 204) return undefined as unknown as T;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) return undefined as unknown as T;
+
   return response.json();
 }
 
