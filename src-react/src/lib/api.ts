@@ -38,19 +38,35 @@ function getAuthState(): AuthState {
 
 function setAuthState(state: AuthState): void {
   localStorage.setItem(AUTH_KEY, JSON.stringify(state));
+  // FIX: Clear stale projectId on login to prevent infinite loop
+  // If user logs in, we shouldn't use projectId from previous session
+  localStorage.removeItem(PROJECT_KEY);
   window.dispatchEvent(new CustomEvent('authChanged', { detail: state }));
 }
 
 function clearAuthState(): void {
   localStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(PROJECT_KEY); // Also clear project on logout
   window.dispatchEvent(new CustomEvent('authChanged', { detail: { user: null, token: null } }));
 }
 
 // ── Gestion centralisée des headers et réponses 401/tokenExpiresSoon ─────────
+let lastAuthErrorTime = 0;
+const AUTH_ERROR_DEBOUNCE_MS = 1000; // Debounce consecutive 401s to prevent redirect loops
+
 async function handleResponse(response: Response): Promise<void> {
   if (response.status === 401) {
+    // FIX: Debounce to prevent rapid redirect loops
+    const now = Date.now();
+    if (now - lastAuthErrorTime < AUTH_ERROR_DEBOUNCE_MS) {
+      // Ignore this 401 if we just handled one recently
+      throw new Error('Session expirée — veuillez vous reconnecter.');
+    }
+    lastAuthErrorTime = now;
+
     clearAuthState();
-    window.location.href = '/login';
+    // FIX: Use replace() to prevent back button from going back to auth state
+    window.location.replace('/login');
     throw new Error('Session expirée — veuillez vous reconnecter.');
   }
   const expiresSoon = response.headers.get('X-Token-Expires-Soon');

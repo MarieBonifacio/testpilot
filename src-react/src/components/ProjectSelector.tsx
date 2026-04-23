@@ -12,7 +12,15 @@ export function ProjectSelector() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
-    projectsApi.list().then(setProjects).catch(console.error).finally(() => setLoading(false));
+    projectsApi.list().then((list) => {
+      setProjects(list);
+      // FIX: Validate that current projectId actually exists in the list
+      // If projectId is set but project doesn't exist (stale localStorage), clear it
+      if (projectId && !list.some(p => p.id === projectId)) {
+        console.warn(`Project ${projectId} not found in list, clearing selection`);
+        setProjectId(null);
+      }
+    }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

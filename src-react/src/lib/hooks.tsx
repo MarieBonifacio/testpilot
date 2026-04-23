@@ -27,31 +27,54 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setProjectIdState(id);
   }, []);
 
-  const refetch = useCallback(async () => {
-    if (!projectId) { setProject(null); setContext(null); return; }
-    setLoading(true);
-    try {
-      const [p, ctx] = await Promise.all([
-        projectsApi.get(projectId),
-        projectsApi.getContext(projectId).catch(() => null),
-      ]);
-      setProject(p);
-      setContext(ctx);
-    } catch (err) {
-      console.error('Error loading project:', err);
-    } finally {
-      setLoading(false);
-    }
+  // FIX: Use useRef to avoid re-creating refetch function on every projectId change
+  // This prevents useEffect from constantly re-triggering
+  const refetchRef = useRef<() => Promise<void>>();
+
+  useEffect(() => {
+    const executeRefetch = async () => {
+      if (!projectId) {
+        setProject(null);
+        setContext(null);
+        return;
+      }
+      setLoading(true);
+      try {
+        const [p, ctx] = await Promise.all([
+          projectsApi.get(projectId),
+          projectsApi.getContext(projectId).catch(() => null),
+        ]);
+        setProject(p);
+        setContext(ctx);
+      } catch (err) {
+        console.error('Error loading project:', err);
+        // FIX: If project not found, clear the invalid projectId to prevent infinite loops
+        if ((err as Error).message?.includes('404') || (err as Error).message?.includes('non trouvé')) {
+          projectStore.setCurrentProjectId(0); // Clear from storage
+          setProjectIdState(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    refetchRef.current = executeRefetch;
+    executeRefetch();
   }, [projectId]);
 
-  useEffect(() => {
-    const id = projectStore.getCurrentProjectId();
-    if (id && id !== projectId) setProjectIdState(id);
+  // FIX: Create refetch function from ref to provide stable reference
+  const refetch = useCallback(async () => {
+    if (refetchRef.current) await refetchRef.current();
   }, []);
 
+  // FIX: Restore projectId from localStorage, but don't restore it if it's invalid
+  // Use a separate effect to validate first
   useEffect(() => {
-    if (projectId) refetch();
-  }, [projectId, refetch]);
+    const id = projectStore.getCurrentProjectId();
+    if (id && id > 0 && id !== projectId) {
+      setProjectIdState(id);
+    }
+  }, [projectId]);
 
   return (
     <ProjectCtx.Provider value={{ projectId, project, context, loading, setProjectId, refetch }}>

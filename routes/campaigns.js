@@ -24,6 +24,24 @@ module.exports = function createCampaignsRouter(db, requireAuth, docGenerator) {
       });
   });
 
+  // GET /api/projects/:id - Récupère un projet par ID
+  router.get("/api/projects/:id", requireAuth, (req, res) => {
+    const projectId = parseInt(req.params.id, 10);
+    if (isNaN(projectId)) return res.status(400).json({ error: 'ID projet invalide' });
+
+    db.get(`
+      SELECT p.*, 
+             (SELECT COUNT(*) FROM scenarios WHERE project_id = p.id) as scenario_count,
+             (SELECT COUNT(*) FROM scenarios WHERE project_id = p.id AND accepted = 1) as accepted_count
+      FROM projects p 
+      WHERE p.id = ?
+    `, [projectId], (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!row) return res.status(404).json({ error: `Projet ${projectId} non trouvé` });
+      res.json(row);
+    });
+  });
+
   // GET /api/campaigns/:id/export-rapport — exporter le rapport d'une campagne archivée
   router.get('/api/campaigns/:id/export-rapport', requireAuth, async (req, res) => {
     const campaignId = parseInt(req.params.id);
