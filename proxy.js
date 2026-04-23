@@ -223,13 +223,13 @@ app.use((req, res, next) => module.exports.authMiddleware(req, res, next));
  */
 function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
-    const http   = require("http");
     const urlObj = new URL(host.replace(/\/$/, "") + urlPath);
+    const transport = urlObj.protocol === "https:" ? require("https") : require("http");
     const bodyStr = body ? JSON.stringify(body) : null;
 
     const options = {
       hostname: urlObj.hostname,
-      port:     urlObj.port || 11434,
+      port:     urlObj.port || (urlObj.protocol === "https:" ? 443 : 11434),
       path:     urlPath,
       method,
       headers: {
@@ -238,7 +238,7 @@ function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
       }
     };
 
-    const req = http.request(options, (res) => {
+    const req = transport.request(options, (res) => {
       let data = "";
       res.on("data", chunk => data += chunk);
       res.on("end", () => {
@@ -248,6 +248,45 @@ function ollamaRequest(method, host, urlPath, body = null, timeoutMs = 8000) {
           resolve({ status: res.statusCode, body: data });
         }
       });
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`Timeout après ${timeoutMs}ms — Ollama inaccessible sur ${host}`));
+    });
+
+    req.on("error", (err) => {
+      reject(new Error(`Impossible de joindre Ollama sur ${host} : ${err.message}`));
+    });
+
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+/**
+ * Like ollamaRequest but returns the raw IncomingMessage for streaming.
+ * Resolves with { status, response: IncomingMessage }.
+ */
+function ollamaStream(method, host, urlPath, body = null, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(host.replace(/\/$/, "") + urlPath);
+    const transport = urlObj.protocol === "https:" ? require("https") : require("http");
+    const bodyStr = body ? JSON.stringify(body) : null;
+
+    const options = {
+      hostname: urlObj.hostname,
+      port:     urlObj.port || (urlObj.protocol === "https:" ? 443 : 11434),
+      path:     urlPath,
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(bodyStr ? { "Content-Length": Buffer.byteLength(bodyStr) } : {})
+      }
+    };
+
+    const req = transport.request(options, (res) => {
+      resolve({ status: res.statusCode, response: res });
     });
 
     req.setTimeout(timeoutMs, () => {
@@ -347,7 +386,7 @@ async function detectFlakinessForSession(sessionId) {
 app.use(createScenariosRouter(db, requireAuth, requireCP, detectFlakinessForSession));
 
 // Ollama proxy
-app.use("/api/ollama", createOllamaRouter(requireAuth, () => module.exports.ollamaRequest));
+app.use("/api/ollama", createOllamaRouter(requireAuth, () => module.exports.ollamaRequest, llmLimiter, () => module.exports.ollamaStream));
 
 // LLM proxy (Anthropic /api/messages)
 app.use(createLlmRouter(requireAuth, llmLimiter, ENV_KEY));
@@ -430,7 +469,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, db, ollamaRequest, authMiddleware };
+module.exports = { app, db, ollamaRequest, ollamaStream, authMiddleware };
 
 // ── Graceful shutdown ────────────────────────────────
 function shutdown(signal) {

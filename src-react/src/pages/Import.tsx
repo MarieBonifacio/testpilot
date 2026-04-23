@@ -3,6 +3,7 @@ import { useProject } from '../lib/hooks';
 import { importApi, llmApi } from '../lib/api';
 import type { ImportPreviewRow } from '../types';
 import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Trash2, Play } from 'lucide-react';
+import { OllamaStatusBadge } from '../components/OllamaStatusBadge';
 
 export function Import() {
   const { projectId } = useProject();
@@ -64,6 +65,7 @@ export function Import() {
 
   return (
     <div>
+      <OllamaStatusBadge />
       <header className="mb-6 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
         <h1 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>Import Excel</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>

@@ -29,11 +29,12 @@ function validateOllamaHost(host) {
 }
 
 /**
- * @param {Function} requireAuth  - middleware requireAuth de proxy.js
- * @param {Function} getOllamaRequest - () => module.exports.ollamaRequest de proxy.js
- *   Évalué à l'instant de la requête pour que jest.spyOn intercepte correctement.
+ * @param {Function} requireAuth      - middleware requireAuth de proxy.js
+ * @param {Function} getOllamaRequest - () => ollamaRequest (bufferisé)
+ * @param {Function} llmLimiter       - express-rate-limit middleware (appliqué uniquement à /chat)
+ * @param {Function} getOllamaStream  - () => ollamaStream (streaming brut)
  */
-module.exports = function createOllamaRouter(requireAuth, getOllamaRequest) {
+module.exports = function createOllamaRouter(requireAuth, getOllamaRequest, llmLimiter, getOllamaStream) {
   const router = express.Router();
 
   // GET /api/ollama/health?host=http://localhost:11434
@@ -77,8 +78,9 @@ module.exports = function createOllamaRouter(requireAuth, getOllamaRequest) {
   });
 
   // POST /api/ollama/chat
-  router.post("/chat", requireAuth, async (req, res) => {
-    const { host, model, messages, temperature } = req.body;
+  // llmLimiter est appliqué ici uniquement (health + models sont non limités)
+  router.post("/chat", requireAuth, llmLimiter, async (req, res) => {
+    const { host, model, messages, temperature, stream: wantStream } = req.body;
 
     let ollamaHost;
     try {
@@ -94,16 +96,37 @@ module.exports = function createOllamaRouter(requireAuth, getOllamaRequest) {
       model,
       messages,
       temperature: temperature !== undefined ? temperature : 0.2,
-      stream: false
+      stream: !!wantStream
     };
 
     try {
-      const { status, body } = await getOllamaRequest()("POST", ollamaHost, "/v1/chat/completions", payload, 120000);
-      if (status !== 200) {
-        const errMsg = typeof body === "object" ? (body.error || JSON.stringify(body)) : body;
-        return res.status(502).json({ error: `Ollama ${status} : ${errMsg}` });
+      if (wantStream) {
+        // ── Mode streaming SSE ────────────────────────────
+        const { status, response: ollamaRes } = await getOllamaStream()(
+          "POST", ollamaHost, "/v1/chat/completions", payload, 120000
+        );
+        if (status !== 200) {
+          let errBody = "";
+          for await (const chunk of ollamaRes) errBody += chunk;
+          try { errBody = JSON.parse(errBody).error || errBody; } catch { /* keep raw */ }
+          return res.status(502).json({ error: `Ollama ${status} : ${errBody}` });
+        }
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no");
+        ollamaRes.pipe(res);
+        req.on("close", () => ollamaRes.destroy());
+      } else {
+        // ── Mode bufferisé (défaut) ───────────────────────
+        const { status, body } = await getOllamaRequest()(
+          "POST", ollamaHost, "/v1/chat/completions", payload, 120000
+        );
+        if (status !== 200) {
+          const errMsg = typeof body === "object" ? (body.error || JSON.stringify(body)) : body;
+          return res.status(502).json({ error: `Ollama ${status} : ${errMsg}` });
+        }
+        res.json(body);
       }
-      res.json(body);
     } catch (err) {
       res.status(502).json({
         error: err.message,

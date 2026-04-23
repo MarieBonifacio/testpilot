@@ -4,6 +4,7 @@ import { scenariosApi, sessionsApi, campaignsApi, llmApi, kpisApi } from '../lib
 import type { Scenario, Session, FlakinessKPI } from '../types';
 import { CheckCircle, XCircle, Ban, Clock, FlaskConical, Plus, Archive, RotateCcw, MessageSquare, Brain, Timer, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { formatDuration } from '../lib/duration';
+import { OllamaStatusBadge } from '../components/OllamaStatusBadge';
 
 type DisplayStatus = 'pass' | 'fail' | 'blocked';
 
@@ -243,6 +244,7 @@ export function Campagne() {
 
   return (
     <div>
+      <OllamaStatusBadge />
       <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>Campagne de test</h1>

@@ -3,6 +3,7 @@ import { useProject } from '../lib/hooks';
 import { comepApi, llmApi } from '../lib/api';
 import type { ComepReport } from '../types';
 import { ShieldCheck, AlertTriangle, Download, RefreshCw, TrendingUp, Brain } from 'lucide-react';
+import { OllamaStatusBadge } from '../components/OllamaStatusBadge';
 
 function GaugeCanvas({ score }: { score: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -168,6 +169,7 @@ ${report.residualRisks.map(r => `<p class="${r.level === 'HIGH' ? 'risk-high' : 
 
   return (
     <div>
+      <OllamaStatusBadge />
       <header className="mb-6 pb-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>Rapport COMEP</h1>

@@ -414,3 +414,34 @@ export interface AuditLog {
   user_agent: string | null;
   created_at: string;
 }
+
+// ── LLM / Provider ────────────────────────────────────
+export type ProviderKey = 'anthropic' | 'openai' | 'mistral' | 'ollama';
+
+export interface ProviderConfig {
+  label: string;
+  needsKey: boolean;
+  endpoint?: string;
+  keyPlaceholder?: string;
+  endpointEditable?: boolean;
+  offline?: boolean;
+  models: string[];
+}
+
+export interface ProviderSettings {
+  key: string;
+  model: string;
+  endpoint: string;
+  host?: string;
+  modelCustom?: string;
+}
+
+export interface StoredProviderState {
+  _current: ProviderKey;
+  anthropic: ProviderSettings;
+  openai: ProviderSettings;
+  mistral: ProviderSettings;
+  ollama: ProviderSettings & { _cachedModels?: string[] };
+}
+
+export type OllamaStatus = 'unknown' | 'ok' | 'error';

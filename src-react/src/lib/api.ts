@@ -401,7 +401,7 @@ export const llmApi = {
     }
   },
 
-  /** Fetch the list of installed Ollama models via the backend proxy. */
+  /** Fetch the list of installed Ollama models via the backend proxy. Persists results to localStorage. */
   getOllamaModels: async (host = 'http://localhost:11434'): Promise<string[]> => {
     const auth = getAuthState();
     const headers: Record<string, string> = {};
@@ -409,7 +409,28 @@ export const llmApi = {
     const res = await fetch(`/api/ollama/models?host=${encodeURIComponent(host)}`, { headers });
     if (!res.ok) throw new Error(`Impossible de lister les modèles Ollama (HTTP ${res.status})`);
     const data = await res.json() as { models: string[] };
-    return data.models ?? [];
+    const models = data.models ?? [];
+    // Persist to localStorage for offline use
+    try {
+      const stored = localStorage.getItem('testpilot_provider');
+      const all = stored ? JSON.parse(stored) as Record<string, unknown> : {};
+      const ollama = (all.ollama ?? {}) as Record<string, unknown>;
+      ollama._cachedModels = models;
+      all.ollama = ollama;
+      localStorage.setItem('testpilot_provider', JSON.stringify(all));
+    } catch { /* ignore storage errors */ }
+    return models;
+  },
+
+  /** Returns cached Ollama models from localStorage without any network request. */
+  getCachedOllamaModels: (): string[] => {
+    try {
+      const stored = localStorage.getItem('testpilot_provider');
+      if (!stored) return [];
+      const all = JSON.parse(stored) as Record<string, unknown>;
+      const ollama = all.ollama as Record<string, unknown> | undefined;
+      return (ollama?._cachedModels as string[] | undefined) ?? [];
+    } catch { return []; }
   },
 
   /**
@@ -471,6 +492,7 @@ export const llmApi = {
           messages: [{ role: 'user', content: prompt }],
           temperature,
           host: s.host ?? 'http://localhost:11434',
+          stream: true,
         }),
       });
       if (!res.ok) {
@@ -478,8 +500,30 @@ export const llmApi = {
         const hint = e.hint ? `\n${e.hint}` : '';
         throw new Error((e.error ?? `Erreur Ollama ${res.status}`) + hint);
       }
-      const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-      return data.choices?.[0]?.message?.content ?? '';
+      // Parse SSE stream — each line: "data: {...}" or "data: [DONE]"
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('Streaming non supporté par ce navigateur.');
+      const decoder = new TextDecoder();
+      let accumulated = '';
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const raw = trimmed.slice(5).trim();
+          if (raw === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(raw) as { choices?: { delta?: { content?: string } }[] };
+            accumulated += chunk.choices?.[0]?.delta?.content ?? '';
+          } catch { /* skip malformed chunks */ }
+        }
+      }
+      return accumulated;
     }
 
     // OpenAI / Mistral — direct call from browser (API key required)
