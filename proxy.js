@@ -37,6 +37,9 @@ const createProductionBugsRouter = require("./routes/production-bugs");
 const createLlmRouter          = require("./routes/llm");
 
 const app  = express();
+// Désactiver la génération automatique d'ETags — l'API sert des données dynamiques
+// qui ne doivent jamais être mises en cache par le navigateur (évite les 304 parasites).
+app.set('etag', false);
 const PORT = process.env.PORT || 3000;
 const ENV_KEY = process.env.ANTHROPIC_API_KEY || null;
 
