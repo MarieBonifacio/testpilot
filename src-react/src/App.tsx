@@ -18,6 +18,7 @@ import { CiCdDocs } from './pages/CiCdDocs';
 import { ProjectSettings } from './pages/ProjectSettings';
 import { AuditLogs } from './pages/AuditLogs';
 import { LlmSettings } from './pages/LlmSettings';
+import { UserStories } from './pages/UserStories';
 import { ProjectSelector } from './components/ProjectSelector';
 import { NotificationBell } from './components/NotificationBell';
 import {
@@ -124,6 +125,7 @@ function Navigation() {
 
       {/* Nav links */}
       <div className="flex items-stretch h-full overflow-x-auto hide-scrollbar flex-1 mx-4">
+        <NavLink to="/user-stories"  className={navLinkClass}>User Stories</NavLink>
         <NavLink to="/"              className={navLinkClass} end>Rédaction</NavLink>
         <NavLink to="/dashboard"     className={navLinkClass}>Dashboard</NavLink>
         <NavLink to="/campagne"      className={navLinkClass}>Campagne</NavLink>
@@ -233,8 +235,9 @@ export default function App() {
             <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
               <Navigation />
               <TokenExpiresBanner />
-              <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 20px' }}>
+                <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 20px' }}>
                   <Routes>
+                    <Route path="/user-stories"   element={<UserStories />} />
                     <Route path="/"               element={<Redaction />} />
                     <Route path="/dashboard"      element={<Dashboard />} />
                     <Route path="/campagne"       element={<Campagne />} />
