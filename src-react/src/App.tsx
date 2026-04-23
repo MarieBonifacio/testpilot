@@ -17,11 +17,12 @@ import { ApiTokens } from './pages/ApiTokens';
 import { CiCdDocs } from './pages/CiCdDocs';
 import { ProjectSettings } from './pages/ProjectSettings';
 import { AuditLogs } from './pages/AuditLogs';
+import { LlmSettings } from './pages/LlmSettings';
 import { ProjectSelector } from './components/ProjectSelector';
 import { NotificationBell } from './components/NotificationBell';
 import {
   Plane, Sun, Moon, LogOut, FileSpreadsheet,
-  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug, Key, BookOpen, Settings, AlertTriangle, X,
+  History, GitBranch, ExternalLink, ShieldCheck, Users as UsersIcon, Bug, Key, BookOpen, Settings, AlertTriangle, X, Cpu,
 } from 'lucide-react';
 
 // ── Bandeau avertissement token CI/CD expirant ────────
@@ -155,6 +156,9 @@ function Navigation() {
           </NavLink>
         )}
         <NavLink to="/export" className={navLinkClass}>Export</NavLink>
+        <NavLink to="/settings/llm" className={navLinkClass}>
+          <span className="flex items-center gap-1"><Cpu size={13} />LLM</span>
+        </NavLink>
         {(user?.role === 'cp' || user?.role === 'admin') && (
           <NavLink to="/settings" className={navLinkClass}>
             <span className="flex items-center gap-1"><Settings size={13} />Paramètres</span>
@@ -245,6 +249,7 @@ export default function App() {
                     <Route path="/api-tokens"     element={<RequireRole roles={['key_user', 'cp', 'admin']}><ApiTokens /></RequireRole>} />
                     <Route path="/cicd-docs"      element={<RequireRole roles={['key_user', 'cp', 'admin']}><CiCdDocs /></RequireRole>} />
                     <Route path="/settings"       element={<RequireRole roles={['cp', 'admin']}><ProjectSettings /></RequireRole>} />
+                    <Route path="/settings/llm"   element={<LlmSettings />} />
                     <Route path="/users"          element={<RequireRole roles={['cp', 'admin']}><Users /></RequireRole>} />
                     <Route path="/audit-logs"     element={<RequireRole roles={['admin']}><AuditLogs /></RequireRole>} />
                     <Route path="*"               element={<Navigate to="/" replace />} />
