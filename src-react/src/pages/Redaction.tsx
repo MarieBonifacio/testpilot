@@ -122,6 +122,46 @@ ${ctx?.adjacent_features ? `- Features adjacentes à risque : ${ctx.adjacent_fea
 ${ctx?.global_constraints ? `- Contraintes globales : ${ctx.global_constraints}` : ''}
 ` : '';
 
+    // Détection de petits modèles Ollama qui nécessitent un prompt simplifié
+    const settings = providerSettings[currentProvider];
+    const model = settings.model === '__custom__' ? (settings.modelCustom || '') : settings.model;
+    const isSmallModel = currentProvider === 'ollama' && (
+      model.includes(':1b') || model.includes(':3b') || 
+      model.startsWith('llama3.2:1b') || model.startsWith('phi')
+    );
+
+    if (isSmallModel) {
+      // Version simplifiée pour petits modèles locaux
+      return `Tu es un testeur QA. Génère des scénarios de test au format Given/When/Then pour cette source :
+
+${sourceText}
+
+Génère 3 à 5 scénarios de test. Pour chaque scénario, écris :
+- "given" : l'état initial du système
+- "when" : l'action effectuée par l'utilisateur
+- "then" : le résultat attendu
+
+Réponds en JSON (sans markdown) :
+{
+  "feature": "nom court de la fonctionnalité testée",
+  "complexity": "simple",
+  "ambiguities": [],
+  "regressionRisks": [],
+  "scenarios": [
+    {
+      "id": "SC-001",
+      "type": "functional",
+      "priority": "high",
+      "title": "titre du scénario",
+      "given": "état initial",
+      "when": "action utilisateur",
+      "then": "résultat attendu"
+    }
+  ]
+}`;
+    }
+
+    // Version complète pour gros modèles (Claude, GPT, gros Ollama)
     return `Tu es un expert QA senior avec 15 ans d'expérience sur des projets de transformation SI.
 Analyse la source suivante et génère des scénarios de tests structurés, précis et exploitables directement en campagne de recette.
 ${contextBlock}
@@ -194,15 +234,16 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
         regression_risks: parsed.regressionRisks ?? [],
       });
 
+      const now = Date.now();
       const scenariosData = parsed.scenarios.map((s, i) => ({
-        scenario_id: s.id || `SC-${String(i + 1).padStart(3, '0')}`,
-        title: s.title || '',
+        scenario_id: s.id ? `${s.id}-${now}` : `SC-${String(i + 1).padStart(3, '0')}-${now}`,
+        title: s.title || `Scénario ${i + 1}`,
         scenario_type: (s.type as Scenario['scenario_type']) || 'functional',
         priority: (s.priority as Scenario['priority']) || 'medium',
-        given_text: s.given || '',
-        when_text: s.when || '',
-        then_text: s.then || '',
-        feature_name: parsed.feature,
+        given_text: String(s.given || ''),
+        when_text: String(s.when || ''),
+        then_text: String(s.then || ''),
+        feature_name: parsed.feature ?? '',
         accepted: false,
       }));
 

@@ -72,45 +72,63 @@ module.exports = function createScenariosRouter(db, requireAuth, requireCP, dete
     const scenarios = Array.isArray(req.body) ? req.body : [req.body];
 
     db.serialize(() => {
-      db.run("BEGIN TRANSACTION", (beginErr) => {
-        if (beginErr) return res.status(500).json({ error: beginErr.message });
+      // First, find the next available scenario_id for this project
+      db.get(
+        `SELECT scenario_id FROM scenarios WHERE project_id = ? ORDER BY scenario_id DESC LIMIT 1`,
+        [projectId],
+        (maxErr, maxRow) => {
+          if (maxErr) return res.status(500).json({ error: maxErr.message });
 
-        const stmt = db.prepare(`
-          INSERT INTO scenarios (project_id, scenario_id, title, scenario_type, priority, given_text, when_text, then_text, feature_name, accepted)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
+          // Extract numeric part from SC-XXX format, default to 0 if none exist
+          let nextNum = 1;
+          if (maxRow?.scenario_id) {
+            const match = maxRow.scenario_id.match(/SC-(\d+)/);
+            if (match) nextNum = parseInt(match[1], 10) + 1;
+          }
 
-        const inserted = [];
-        let firstError = null;
-        let pending = scenarios.length;
+          db.run("BEGIN TRANSACTION", (beginErr) => {
+            if (beginErr) return res.status(500).json({ error: beginErr.message });
 
-        if (pending === 0) {
-          stmt.finalize();
-          db.run("COMMIT", () => res.status(201).json([]));
-          return;
-        }
+            const stmt = db.prepare(`
+              INSERT INTO scenarios (project_id, scenario_id, title, scenario_type, priority, given_text, when_text, then_text, feature_name, accepted)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
 
-        scenarios.forEach(s => {
-          stmt.run(
-            [projectId, s.id || s.scenario_id, s.title, s.type || s.scenario_type, s.priority, s.given || s.given_text, s.when || s.when_text, s.then || s.then_text, s.feature || s.feature_name, s.accepted ? 1 : 0],
-            function(err) {
-              if (err && !firstError) firstError = err;
-              if (!err) inserted.push({ ...s, _dbId: this.lastID });
+            const inserted = [];
+            let firstError = null;
+            let pending = scenarios.length;
 
-              pending -= 1;
-              if (pending > 0) return;
-
-              stmt.finalize(() => {
-                if (firstError) {
-                  db.run("ROLLBACK", () => res.status(500).json({ error: "Erreur lors de l'insertion des scénarios: " + firstError.message }));
-                } else {
-                  db.run("COMMIT", () => res.status(201).json(inserted));
-                }
-              });
+            if (pending === 0) {
+              stmt.finalize();
+              db.run("COMMIT", () => res.status(201).json([]));
+              return;
             }
-          );
-        });
-      });
+
+            scenarios.forEach((s, idx) => {
+              // Auto-generate scenario_id in SC-XXX format
+              const scenarioId = `SC-${String(nextNum + idx).padStart(3, '0')}`;
+              stmt.run(
+                [projectId, scenarioId, s.title, s.type || s.scenario_type, s.priority, s.given || s.given_text, s.when || s.when_text, s.then || s.then_text, s.feature || s.feature_name, s.accepted ? 1 : 0],
+                function(err) {
+                  if (err && !firstError) firstError = err;
+                  if (!err) inserted.push({ ...s, scenario_id: scenarioId, _dbId: this.lastID });
+
+                  pending -= 1;
+                  if (pending > 0) return;
+
+                  stmt.finalize(() => {
+                    if (firstError) {
+                      db.run("ROLLBACK", () => res.status(500).json({ error: "Erreur lors de l'insertion des scénarios: " + firstError.message }));
+                    } else {
+                      db.run("COMMIT", () => res.status(201).json(inserted));
+                    }
+                  });
+                }
+              );
+            });
+          });
+        }
+      );
     });
   });
 
