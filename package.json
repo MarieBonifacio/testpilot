@@ -7,6 +7,8 @@
     "start": "node proxy.js",
     "init-db": "node init_db.js",
     "dev": "node init_db.js && node proxy.js",
+    "dev:full": "npm run init-db && npm run dev:parallel",
+    "dev:parallel": "node -e \"const {spawn} = require('child_process'); const backend = spawn('node', ['proxy.js'], {stdio: 'inherit', cwd: __dirname}); const frontend = spawn('npm', ['run', 'dev'], {stdio: 'inherit', cwd: __dirname + '/src-react', shell: true}); process.on('SIGINT', () => { backend.kill(); frontend.kill(); process.exit(0); });\"",
     "test": "jest tests/ --forceExit --runInBand",
     "test:watch": "jest tests/ --watch"
   },
