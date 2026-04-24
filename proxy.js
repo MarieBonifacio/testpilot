@@ -35,6 +35,7 @@ const createCampaignsRouter    = require("./routes/campaigns");
 const createClickUpRouter      = require("./routes/clickup");
 const createProductionBugsRouter = require("./routes/production-bugs");
 const createLlmRouter          = require("./routes/llm");
+const createUserStoriesRouter  = require("./routes/user-stories");
 
 const app  = express();
 // Désactiver la génération automatique d'ETags — l'API sert des données dynamiques
@@ -308,6 +309,26 @@ const dbRunP = (sql, p = []) => new Promise((res, rej) => db.run(sql, p, functio
 const dbGetP = (sql, p = []) => new Promise((res, rej) => db.get(sql, p, (e, r) => e ? rej(e) : res(r)));
 const dbAllP = (sql, p = []) => new Promise((res, rej) => db.all(sql, p, (e, r) => e ? rej(e) : res(r)));
 
+// ── Audit Log Helper ─────────────────────────────────
+/**
+ * Enregistre une action dans les logs d'audit (async, non-bloquant)
+ * @param {number} userId - ID de l'utilisateur
+ * @param {string} action - Action effectuée (ex: 'CREATE_USER_STORY')
+ * @param {string} entityType - Type d'entité (ex: 'user_story')
+ * @param {number} entityId - ID de l'entité
+ * @param {string} details - Détails JSON
+ */
+function auditLog(userId, action, entityType, entityId, details) {
+  db.run(
+    `INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+     VALUES (?, ?, ?, ?, ?)`,
+    [userId, action, entityType, entityId, details],
+    (err) => {
+      if (err) console.warn('[auditLog] Erreur écriture log:', err.message);
+    }
+  );
+}
+
 // ── Détection flakiness ──────────────────────────────
 /**
  * Après clôture d'une session, compare le statut de chaque résultat
@@ -384,6 +405,9 @@ async function detectFlakinessForSession(sessionId) {
 
 // Scenarios, sessions, stats
 app.use(createScenariosRouter(db, requireAuth, requireCP, detectFlakinessForSession));
+
+// User Stories (P9.1)
+app.use(createUserStoriesRouter(db, requireAuth, auditLog));
 
 // Ollama proxy
 app.use("/api/ollama", createOllamaRouter(requireAuth, () => module.exports.ollamaRequest, llmLimiter, () => module.exports.ollamaStream));

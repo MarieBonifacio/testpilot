@@ -445,3 +445,64 @@ export interface StoredProviderState {
 }
 
 export type OllamaStatus = 'unknown' | 'ok' | 'error';
+
+// ── P9.1 User Stories ─────────────────────────────────
+export type UserStoryPriority = 'high' | 'medium' | 'low';
+export type UserStoryStatus = 'draft' | 'ready' | 'in_progress' | 'done';
+
+export interface UserStoryCriterion {
+  id: number;
+  user_story_id: number;
+  criterion: string;
+  display_order: number;
+  created_at: string;
+}
+
+export interface UserStory {
+  id: number;
+  project_id: number;
+  title: string;
+  description: string | null;
+  epic: string | null;
+  priority: UserStoryPriority;
+  story_points: number | null;
+  status: UserStoryStatus;
+  created_by: number | null;
+  assigned_to: number | null;
+  created_at: string;
+  updated_at: string;
+  // Relations (populated by backend)
+  criteria?: UserStoryCriterion[];
+  linked_scenarios?: number[]; // IDs des scénarios liés
+  creator_name?: string;
+  assignee_name?: string;
+}
+
+export interface CreateUserStoryPayload {
+  title: string;
+  description?: string;
+  epic?: string;
+  priority?: UserStoryPriority;
+  story_points?: number;
+  status?: UserStoryStatus;
+  criteria?: string[]; // Liste de critères texte
+}
+
+export interface UpdateUserStoryPayload extends Partial<CreateUserStoryPayload> {
+  assigned_to?: number | null;
+}
+
+export interface GenerateUserStoryPayload {
+  input_description: string;
+  provider?: ProviderKey;
+  model?: string;
+  temperature?: number;
+}
+
+export interface GenerateBatchUserStoriesPayload {
+  context_description: string;
+  count?: number; // Nombre de US à générer (défaut: 5)
+  provider?: ProviderKey;
+  model?: string;
+  temperature?: number;
+}

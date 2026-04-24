@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useProject, useAuth } from '../lib/hooks';
-import { scenariosApi, analysesApi, usersApi, llmApi } from '../lib/api';
-import type { Scenario, Analysis, User, ProviderKey, ProviderSettings, OllamaStatus } from '../types';
+import { scenariosApi, analysesApi, usersApi, llmApi, userStoriesApi } from '../lib/api';
+import type { Scenario, Analysis, User, ProviderKey, ProviderSettings, OllamaStatus, UserStory } from '../types';
 import { Play, CheckCircle, Download, Trash2, UserCheck, ShieldCheck, XCircle, Send } from 'lucide-react';
 import { PROVIDERS, ProviderFields } from '../components/ProviderFields';
 
@@ -13,6 +13,8 @@ export function Redaction() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [userStories, setUserStories] = useState<UserStory[]>([]);
+  const [selectedUserStoryId, setSelectedUserStoryId] = useState<number | null>(null);
   const [sourceType, setSourceType] = useState<SourceType>('user-story');
   const [sourceText, setSourceText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -62,6 +64,18 @@ export function Redaction() {
   }, [projectId]);
 
   useEffect(() => { loadScenarios(); }, [loadScenarios]);
+
+  // Charger les User Stories pour le dropdown
+  useEffect(() => {
+    if (!projectId) {
+      setUserStories([]);
+      setSelectedUserStoryId(null);
+      return;
+    }
+    userStoriesApi.list(projectId, { status: 'ready' })
+      .then(stories => setUserStories(stories))
+      .catch(() => setUserStories([]));
+  }, [projectId]);
 
   // Charger les utilisateurs pour l'assignation (CP/admin uniquement)
   useEffect(() => {
@@ -247,7 +261,22 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
         accepted: false,
       }));
 
-      await scenariosApi.create(projectId, scenariosData);
+      const createdScenarios = await scenariosApi.create(projectId, scenariosData);
+
+      // Si une User Story est sélectionnée, lier les scénarios créés à cette US
+      if (selectedUserStoryId && Array.isArray(createdScenarios)) {
+        for (const scenario of createdScenarios) {
+          if (scenario.id) {
+            try {
+              await userStoriesApi.linkScenario(selectedUserStoryId, scenario.id);
+            } catch (linkErr) {
+              console.error('Erreur liaison scénario → US:', linkErr);
+              // Continue même si le lien échoue
+            }
+          }
+        }
+      }
+
       await loadScenarios();
       setSourceText('');
     } catch (err) {
@@ -326,6 +355,29 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
           onCheckOllama={checkOllama}
           onChange={s => setProviderSettings(prev => ({ ...prev, [currentProvider]: s }))} />
       </div>
+
+      {/* User Story Selection (optional) */}
+      {userStories.length > 0 && (
+        <div className="panel">
+          <div className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-dim)' }}>User Story (optionnel)</div>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+            Vous pouvez sélectionner une User Story existante. Les scénarios générés seront automatiquement liés à cette US.
+          </p>
+          <select
+            className="w-full rounded text-sm"
+            style={{ border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', padding: '0.5rem' }}
+            value={selectedUserStoryId ?? ''}
+            onChange={(e) => setSelectedUserStoryId(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">Aucune User Story (génération standalone)</option>
+            {userStories.map(us => (
+              <option key={us.id} value={us.id}>
+                {us.title} {us.epic ? `[${us.epic}]` : ''} — {us.story_points || '?'} pts
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Source */}
       <div className="panel">
