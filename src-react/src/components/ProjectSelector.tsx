@@ -1,27 +1,33 @@
 import { useState, useEffect } from 'react';
 import { projectsApi } from '../lib/api';
-import { useProject } from '../lib/hooks';
+import { useProject, useAuth } from '../lib/hooks';
 import type { Project } from '../types';
 import { Plus } from 'lucide-react';
 
 export function ProjectSelector() {
   const { projectId, setProjectId } = useProject();
+  const { token } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  const isAuthenticated = !!token;
+
   useEffect(() => {
+    if (!isAuthenticated) {
+      setProjects([]);
+      setLoading(false);
+      return;
+    }
     projectsApi.list().then((list) => {
       setProjects(list);
-      // FIX: Validate that current projectId actually exists in the list
-      // If projectId is set but project doesn't exist (stale localStorage), clear it
       if (projectId && !list.some(p => p.id === projectId)) {
         console.warn(`Project ${projectId} not found in list, clearing selection`);
         setProjectId(null);
       }
     }).catch(console.error).finally(() => setLoading(false));
-  }, []);
+  }, [isAuthenticated]);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = parseInt(e.target.value, 10);
@@ -41,6 +47,7 @@ export function ProjectSelector() {
   };
 
   if (loading) return <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Chargement…</div>;
+  if (!isAuthenticated) return null;
 
   return (
     <div className="flex items-center gap-2">
@@ -69,6 +76,8 @@ export function ProjectSelector() {
         onClick={() => { setShowModal(true); setCreateError(null); }}
         className="btn-icon"
         title="Nouveau projet"
+        disabled={!isAuthenticated}
+        style={{ opacity: isAuthenticated ? 1 : 0.5, cursor: isAuthenticated ? 'pointer' : 'not-allowed' }}
       >
         <Plus size={15} />
       </button>
