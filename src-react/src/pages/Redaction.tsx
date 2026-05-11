@@ -141,7 +141,8 @@ ${ctx?.global_constraints ? `- Contraintes globales : ${ctx.global_constraints}`
     const model = settings.model === '__custom__' ? (settings.modelCustom || '') : settings.model;
     const isSmallModel = currentProvider === 'ollama' && (
       model.includes(':1b') || model.includes(':3b') || 
-      model.startsWith('llama3.2:1b') || model.startsWith('phi')
+      model.startsWith('llama3.2:1b') || model.startsWith('phi') ||
+      model.includes('qwen') || model.includes('7b')
     );
 
     if (isSmallModel) {
@@ -221,9 +222,9 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
     if (!projectId) { setError('Veuillez sélectionner un projet.'); return; }
     if (!sourceText.trim()) { setError('Veuillez entrer une description.'); return; }
     setLoading(true);
-    // Timeout 130s via AbortController (backend Ollama = 120s)
+    // Timeout 310s via AbortController (backend Ollama = 300s)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 130_000);
+    const timeoutId = setTimeout(() => controller.abort(), 310_000);
     try {
       const settings = providerSettings[currentProvider];
       const model = settings.model === '__custom__' ? (settings.modelCustom || '') : settings.model;
@@ -234,22 +235,35 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
       });
       const match = raw.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('Réponse IA invalide — JSON introuvable.');
-      const parsed = JSON.parse(match[0]) as {
+
+      // Sanitizer : supprime les séquences d'échappement invalides (ex: \' ) générées par certains modèles Ollama
+      const sanitizeJSON = (s: string) => s.replace(/\\(?!["\\/bfnrtu])/g, '');
+
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(match[0]);
+      } catch {
+        try { parsed = JSON.parse(sanitizeJSON(match[0])); }
+        catch {
+          throw new Error('JSON invalide — essayez un autre modèle Ollama (llama3.2:1b).');
+        }
+      }
+      const resp = parsed as {
         feature?: string; complexity?: string;
         ambiguities?: string[]; regressionRisks?: string[];
         scenarios?: { id?: string; title?: string; type?: string; priority?: string; given?: string; when?: string; then?: string }[];
       };
-      if (!Array.isArray(parsed.scenarios)) throw new Error('Format invalide — tableau de scénarios manquant.');
+      if (!Array.isArray(resp.scenarios)) throw new Error('Format invalide — tableau de scénarios manquant.');
 
       await analysesApi.save(projectId, {
-        feature_detected: parsed.feature ?? '',
-        complexity: (parsed.complexity as Analysis['complexity']) ?? 'simple',
-        ambiguities: parsed.ambiguities ?? [],
-        regression_risks: parsed.regressionRisks ?? [],
+        feature_detected: resp.feature ?? '',
+        complexity: (resp.complexity as Analysis['complexity']) ?? 'simple',
+        ambiguities: resp.ambiguities ?? [],
+        regression_risks: resp.regressionRisks ?? [],
       });
 
       const now = Date.now();
-      const scenariosData = parsed.scenarios.map((s, i) => ({
+      const scenariosData = resp.scenarios!.map((s, i) => ({
         scenario_id: s.id ? `${s.id}-${now}` : `SC-${String(i + 1).padStart(3, '0')}-${now}`,
         title: s.title || `Scénario ${i + 1}`,
         scenario_type: (s.type as Scenario['scenario_type']) || 'functional',
@@ -257,7 +271,7 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
         given_text: String(s.given || ''),
         when_text: String(s.when || ''),
         then_text: String(s.then || ''),
-        feature_name: parsed.feature ?? '',
+        feature_name: resp.feature ?? '',
         accepted: false,
       }));
 
@@ -281,7 +295,7 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
       setSourceText('');
     } catch (err) {
       const cause = (err as Error).name === 'TimeoutError' || (err as Error).message?.includes('abort')
-        ? "Le délai de génération a été dépassé (130s). Vérifiez qu'Ollama répond correctement ou réduisez la taille du prompt."
+        ? "La génération a pris trop de temps (>5 min). Essayez un modèle plus petit (llama3.2:1b) ou simplifiez la source."
         : (err as Error).message || 'Erreur lors de la génération.';
       setError(cause);
     } finally {

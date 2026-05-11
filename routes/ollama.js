@@ -103,7 +103,7 @@ module.exports = function createOllamaRouter(requireAuth, getOllamaRequest, llmL
       if (wantStream) {
         // ── Mode streaming SSE ────────────────────────────
         const { status, response: ollamaRes } = await getOllamaStream()(
-          "POST", ollamaHost, "/v1/chat/completions", payload, 120000
+          "POST", ollamaHost, "/v1/chat/completions", payload, 300000
         );
         if (status !== 200) {
           let errBody = "";
@@ -130,7 +130,7 @@ module.exports = function createOllamaRouter(requireAuth, getOllamaRequest, llmL
       } else {
         // ── Mode bufferisé (défaut) ───────────────────────
         const { status, body } = await getOllamaRequest()(
-          "POST", ollamaHost, "/v1/chat/completions", payload, 120000
+          "POST", ollamaHost, "/v1/chat/completions", payload, 300000
         );
         if (status !== 200) {
           const errMsg = typeof body === "object" ? (body.error || JSON.stringify(body)) : body;
