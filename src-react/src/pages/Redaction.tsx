@@ -221,9 +221,9 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
     if (!projectId) { setError('Veuillez sélectionner un projet.'); return; }
     if (!sourceText.trim()) { setError('Veuillez entrer une description.'); return; }
     setLoading(true);
-    // Timeout 90s via AbortController
+    // Timeout 130s via AbortController (backend Ollama = 120s)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90_000);
+    const timeoutId = setTimeout(() => controller.abort(), 130_000);
     try {
       const settings = providerSettings[currentProvider];
       const model = settings.model === '__custom__' ? (settings.modelCustom || '') : settings.model;
@@ -280,7 +280,10 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
       await loadScenarios();
       setSourceText('');
     } catch (err) {
-      setError((err as Error).message || 'Erreur lors de la génération.');
+      const cause = (err as Error).name === 'TimeoutError' || (err as Error).message?.includes('abort')
+        ? "Le délai de génération a été dépassé (130s). Vérifiez qu'Ollama répond correctement ou réduisez la taille du prompt."
+        : (err as Error).message || 'Erreur lors de la génération.';
+      setError(cause);
     } finally {
       clearTimeout(timeoutId);
       setLoading(false);

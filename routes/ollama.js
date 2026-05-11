@@ -115,7 +115,18 @@ module.exports = function createOllamaRouter(requireAuth, getOllamaRequest, llmL
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("X-Accel-Buffering", "no");
         ollamaRes.pipe(res);
-        req.on("close", () => ollamaRes.destroy());
+        ollamaRes.on("error", (e) => {
+          console.error("Ollama stream error:", e.message);
+          if (!res.destroyed) res.destroy();
+        });
+        res.on("close", () => {
+          ollamaRes.unpipe(res);
+          ollamaRes.destroy();
+        });
+        req.on("close", () => {
+          ollamaRes.unpipe(res);
+          ollamaRes.destroy();
+        });
       } else {
         // ── Mode bufferisé (défaut) ───────────────────────
         const { status, body } = await getOllamaRequest()(
