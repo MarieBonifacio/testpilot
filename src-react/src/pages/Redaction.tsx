@@ -19,6 +19,10 @@ export function Redaction() {
   const [sourceText, setSourceText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastSource, setLastSource] = useState<{
+    type: SourceType; text: string;
+    userStory?: { id: number; title: string; description: string | null; epic: string | null };
+  } | null>(null);
   const [currentProvider, setCurrentProvider] = useState<ProviderKey>(() => {
     try {
       const stored = localStorage.getItem('testpilot_provider');
@@ -292,6 +296,12 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
       }
 
       await loadScenarios();
+      const linkedUS = selectedUserStoryId && userStories.find(us => us.id === selectedUserStoryId);
+      setLastSource({
+        type: sourceType,
+        text: sourceText,
+        ...(linkedUS && { userStory: { id: linkedUS.id, title: linkedUS.title, description: linkedUS.description, epic: linkedUS.epic } }),
+      });
       setSourceText('');
     } catch (err) {
       const cause = (err as Error).name === 'TimeoutError' || (err as Error).message?.includes('abort')
@@ -465,10 +475,44 @@ Réponds UNIQUEMENT en JSON valide, sans markdown, sans backticks, sans commenta
       )}
 
       {scenarios.length > 0 && (
-        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <h2 className="text-base font-bold">Scénarios générés</h2>
-          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{acceptedCount} accepté / {scenarios.length} total</span>
-        </div>
+        <>
+          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+            <h2 className="text-base font-bold">Scénarios générés</h2>
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{acceptedCount} accepté / {scenarios.length} total</span>
+          </div>
+
+          {lastSource && (
+            <div className="panel mb-4 p-3" style={{ borderLeft: '3px solid var(--accent)' }}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[0.65rem] font-bold uppercase tracking-wide mb-1" style={{ color: 'var(--text-dim)' }}>
+                    Source — {lastSource.type === 'user-story' ? 'User Story' : lastSource.type === 'spec' ? 'Spécification' : lastSource.type === 'oral' ? 'Description orale' : 'Règle de gestion'}
+                    {lastSource.userStory && <span className="ml-2 font-normal">(liée)</span>}
+                  </div>
+                  {lastSource.userStory ? (
+                    <>
+                      <div className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>
+                        {lastSource.userStory.title}
+                        {lastSource.userStory.epic && <span className="text-xs font-normal ml-2 opacity-70">[{lastSource.userStory.epic}]</span>}
+                      </div>
+                      {lastSource.userStory.description && (
+                        <p className="text-xs mt-1 mb-0" style={{ color: 'var(--text-muted)' }}>{lastSource.userStory.description}</p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs mt-1 mb-0 whitespace-pre-wrap line-clamp-3" style={{ color: 'var(--text-muted)' }}>
+                      {lastSource.text.length > 200 ? lastSource.text.slice(0, 200) + '…' : lastSource.text}
+                    </p>
+                  )}
+                </div>
+                <button className="btn-icon flex-shrink-0" onClick={() => setLastSource(null)} title="Fermer"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '2px' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <div className="space-y-4">
